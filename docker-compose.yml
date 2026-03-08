@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sui-shop-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - JWT_SECRET=dev-secret-change-in-production
+      - MASTER_SALT=dev-salt-change-in-production
+      - ALLOWED_ORIGINS=http://localhost:3000
+      - SMTP_HOST=smtp.mailtrap.io
+      - SMTP_PORT=2525
+      - SMTP_USER=your-mailtrap-user
+      - SMTP_PASS=your-mailtrap-pass
+      - EMAIL_FROM=noreply@suishop.local
+      - GOOGLE_CLIENT_ID=your-google-client-id
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - sui-shop-network
+    restart: unless-stopped
+
+  # Frontend Web App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sui-shop-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id
+      - NEXT_PUBLIC_SUI_NETWORK=testnet
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - sui-shop-network
+    restart: unless-stopped
+
+networks:
+  sui-shop-network:
+    driver: bridge

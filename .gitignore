@@ -1,0 +1,191 @@
+# ==================== General ====================
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# ==================== Frontend (Next.js) ====================
+
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/.vercel
+frontend/.turbo
+
+# ==================== Mobile (React Native) ====================
+
+mobile/node_modules/
+mobile/.expo/
+mobile/.expo-shared/
+mobile/dist/
+mobile/npm-debug.*
+mobile/*.jks
+mobile/*.p8
+mobile/*.p12
+mobile/*.key
+mobile/*.mobileprovision
+mobile/*.orig.*
+mobile/web-build/
+mobile/.idea/
+
+# iOS
+mobile/ios/Pods/
+mobile/ios/build/
+mobile/ios/*.xcworkspace/xcuserdata/
+mobile/ios/*.xcodeproj/xcuserdata/
+mobile/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+mobile/ios/Podfile.lock
+
+# Android
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/.idea/
+mobile/android/local.properties
+mobile/android/*.iml
+mobile/android/*.hprof
+mobile/android/keystore.properties
+mobile/android/app/release/
+mobile/android/captures/
+mobile/android/.externalNativeBuild/
+mobile/android/.cxx/
+
+# Environment variables
+mobile/.env
+mobile/.env.local
+mobile/.env.development.local
+mobile/.env.test.local
+mobile/.env.production.local
+
+# ==================== Backend (NEW) ====================
+
+backend/node_modules/
+backend/dist/
+backend/build/
+backend/.env
+backend/.env.local
+backend/.env.development.local
+backend/.env.test.local
+backend/.env.production.local
+
+# Database
+backend/postgres-data/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Redis
+backend/redis-data/
+backend/dump.rdb
+
+# Logs
+backend/logs/
+backend/*.log
+
+# ==================== Smart Contracts (Move) ====================
+
+# Build artifacts
+move/build/
+contracts/build/
+
+# Sui CLI generated files
+.sui/
+
+# Downloaded Sui framework (if you had it)
+sui/
+
+# ==================== Docker ====================
+
+# Docker volumes
+docker-volumes/
+postgres-data/
+redis-data/
+
+# ==================== Sensitive Data ====================
+
+# API Keys and Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+credentials/
+
+# Wallet private keys
+**/wallet.json
+**/keystore/
+**/.sui/sui_config/
+
+# ==================== Build Outputs ====================
+
+# General build outputs
+build/
+dist/
+out/
+coverage/
+.cache/
+
+# ==================== Package Managers ====================
+
+# npm
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# yarn
+yarn.lock
+.yarn/
+.pnp.*
+
+# pnpm
+pnpm-lock.yaml
+
+# ==================== Testing ====================
+
+coverage/
+.nyc_output/
+*.lcov
+
+# ==================== Temporary Files ====================
+
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*~

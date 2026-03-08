@@ -1,0 +1,19 @@
+# Save deployment info
+@"
+SUI SHOP DEPLOYMENT - TESTNET
+==============================
+
+Package ID: 0x1dcd47cca0b397d4734cb90af864af9f0d368c0ea9d424de14c0a85e4598067e
+Marketplace ID: 0x000f85e251c05ce77e1e4e07960d11d3163c53e584a9f688f153555045948238
+Admin Cap: 0x4e95bd2f19fe27a7eb82545dca7b950c99eab3f30528758c0b4bed6ae085135f
+
+Deployer Address: 0x29444f7c2bcd92091577a0452e54ccf6fa21fa9875c1f2c72c4ffac9d9b43849
+
+Transaction: https://suiexplorer.com/txblock/9Bmip5EG3No4W7FGrskHRXdsyzU738xtSRj1XBhYKDe1?network=testnet
+
+Deployed: $(Get-Date)
+Network: Testnet
+Gas Used: 0.048 SUI
+"@ | Out-File -FilePath "C:\Users\User\Desktop\sui-commerce\DEPLOYMENT_INFO.txt"
+
+echo "Saved to DEPLOYMENT_INFO.txt"
