@@ -331,7 +331,7 @@ export function useFollowSeller() {
 }
 
 // Fetch Products Hook
-export function useFetchProducts() {
+/*export function useFetchProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -398,6 +398,66 @@ export function useFetchProducts() {
   }, [fetchProducts]);
 
   return { products, loading, error, refetch: fetchProducts };
+}*/
+
+// ==================== Fetch Products Hook ====================
+
+export function useFetchProducts() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Query backend API instead of blockchain
+      const response = await fetch('http://localhost:4000/api/products');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch products');
+      }
+
+      const data = await response.json();
+      
+      // Transform API response to match Product interface
+      const productData: Product[] = data.products.map((p: any) => ({
+        id: p.id,
+        seller: p.seller,
+        title: p.title,
+        description: p.description,
+        price: p.price,
+        imageUrl: p.image_url,
+        category: p.category,
+        isAvailable: p.is_available,
+        createdAt: p.created_at,
+        totalSales: p.total_sales?.toString() || '0',
+        totalRevenue: p.total_revenue?.toString() || '0',
+        ratingSum: p.rating_sum?.toString() || '0',
+        ratingCount: p.rating_count?.toString() || '0',
+      }));
+
+      setProducts(productData);
+    } catch (err) {
+      const errorMessage = getSafeErrorMessage(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  return {
+    products,
+    loading,
+    error,
+    refetch: fetchProducts,
+  };
 }
 
 // Fetch User Products Hook
