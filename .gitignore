@@ -189,3 +189,9 @@ temp/
 *.bak
 *.swp
 *~
+
+
+
+*.zip
+node_modules
+.next
