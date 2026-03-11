@@ -208,7 +208,7 @@ export function usePurchaseProduct() {
 }
 
 // Post Review Hook
-export function usePostReview() {
+/*export function usePostReview() {
   const { executeTransaction, ...transactionState } = useSecureTransaction();
   const account = useCurrentAccount();
 
@@ -246,7 +246,7 @@ export function usePostReview() {
   );
 
   return { postReview, ...transactionState };
-}
+}*/
 
 // Create Seller Profile Hook
 export function useCreateSellerProfile() {
@@ -402,6 +402,8 @@ export function useFollowSeller() {
 
 // ==================== Fetch Products Hook ====================
 
+// ==================== Fetch Products Hook ====================
+
 export function useFetchProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
@@ -427,11 +429,11 @@ export function useFetchProducts() {
         seller: p.seller,
         title: p.title,
         description: p.description,
-        price: p.price,
+        price: p.price.toString(),
         imageUrl: p.image_url,
         category: p.category,
         isAvailable: p.is_available,
-        createdAt: p.created_at,
+        createdAt: p.created_at.toString(),
         totalSales: p.total_sales?.toString() || '0',
         totalRevenue: p.total_revenue?.toString() || '0',
         ratingSum: p.rating_sum?.toString() || '0',
@@ -442,7 +444,7 @@ export function useFetchProducts() {
     } catch (err) {
       const errorMessage = getSafeErrorMessage(err);
       setError(errorMessage);
-      toast.error(errorMessage);
+      console.error('Error fetching products:', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -461,60 +463,305 @@ export function useFetchProducts() {
 }
 
 // Fetch User Products Hook
-export function useUserProducts(address?: string) {
+// ==================== Fetch User's Products Hook ====================
+
+export function useUserProducts(userAddress: string | undefined) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
-  const account = useCurrentAccount();
-  const client = useSuiClient();
-
-  const userAddress = address || account?.address;
+  const [error, setError] = useState<string | null>(null);
 
   const fetchUserProducts = useCallback(async () => {
-    if (!userAddress) return;
+    if (!userAddress) {
+      setProducts([]);
+      return;
+    }
 
     setLoading(true);
+    setError(null);
 
     try {
-      const response = await client.getOwnedObjects({
-        owner: userAddress,
-        filter: { StructType: OBJECT_TYPES.PRODUCT },
-        options: { showContent: true },
-      });
+      // Query backend API
+      const response = await fetch(`http://localhost:4000/api/sellers/${userAddress}/products`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch user products');
+      }
 
-      const productData: Product[] = response.data
-        .filter((obj: any) => obj.data?.content)
-        .map((obj: any) => {
-          const fields = (obj.data!.content as any)?.fields;
-          return {
-            id: obj.data!.objectId,
-            seller: fields.seller,
-            title: fields.title,
-            description: fields.description,
-            price: fields.price,
-            imageUrl: fields.image_url,
-            category: fields.category,
-            isAvailable: fields.is_available,
-            createdAt: fields.created_at,
-            totalSales: fields.total_sales,
-            totalRevenue: fields.total_revenue,
-            ratingSum: fields.rating_sum,
-            ratingCount: fields.rating_count,
-          };
-        });
+      const data = await response.json();
+      
+      const productData: Product[] = data.products.map((p: any) => ({
+        id: p.id,
+        seller: p.seller,
+        title: p.title,
+        description: p.description,
+        price: p.price.toString(),
+        imageUrl: p.image_url,
+        category: p.category,
+        isAvailable: p.is_available,
+        createdAt: p.created_at.toString(),
+        totalSales: p.total_sales?.toString() || '0',
+        totalRevenue: p.total_revenue?.toString() || '0',
+        ratingSum: p.rating_sum?.toString() || '0',
+        ratingCount: p.rating_count?.toString() || '0',
+      }));
 
       setProducts(productData);
     } catch (err) {
-      toast.error(getSafeErrorMessage(err));
+      const errorMessage = getSafeErrorMessage(err);
+      setError(errorMessage);
+      console.error('Error fetching user products:', errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [userAddress, client]);
+  }, [userAddress]);
 
   useEffect(() => {
     fetchUserProducts();
   }, [fetchUserProducts]);
 
-  return { products, loading, refetch: fetchUserProducts };
+  return {
+    products,
+    loading,
+    error,
+    refetch: fetchUserProducts,
+  };
+}
+
+// ==================== Fetch Products by Category ====================
+
+export function useFetchProductsByCategory(category: string | null) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const url = category 
+        ? `http://localhost:4000/api/products?category=${encodeURIComponent(category)}`
+        : 'http://localhost:4000/api/products';
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch products');
+      }
+
+      const data = await response.json();
+      
+      const productData: Product[] = data.products.map((p: any) => ({
+        id: p.id,
+        seller: p.seller,
+        title: p.title,
+        description: p.description,
+        price: p.price.toString(),
+        imageUrl: p.image_url,
+        category: p.category,
+        isAvailable: p.is_available,
+        createdAt: p.created_at.toString(),
+        totalSales: p.total_sales?.toString() || '0',
+        totalRevenue: p.total_revenue?.toString() || '0',
+        ratingSum: p.rating_sum?.toString() || '0',
+        ratingCount: p.rating_count?.toString() || '0',
+      }));
+
+      setProducts(productData);
+    } catch (err) {
+      const errorMessage = getSafeErrorMessage(err);
+      setError(errorMessage);
+      console.error('Error fetching products:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [category]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  return {
+    products,
+    loading,
+    error,
+    refetch: fetchProducts,
+  };
+}
+
+// ==================== Fetch Single Product ====================
+
+export function useFetchProduct(productId: string | null) {
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchProduct = useCallback(async () => {
+    if (!productId) {
+      setProduct(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${productId}`);
+      
+      if (!response.ok) {
+        throw new Error('Product not found');
+      }
+
+      const p = await response.json();
+      
+      const productData: Product = {
+        id: p.id,
+        seller: p.seller,
+        title: p.title,
+        description: p.description,
+        price: p.price.toString(),
+        imageUrl: p.image_url,
+        category: p.category,
+        isAvailable: p.is_available,
+        createdAt: p.created_at.toString(),
+        totalSales: p.total_sales?.toString() || '0',
+        totalRevenue: p.total_revenue?.toString() || '0',
+        ratingSum: p.rating_sum?.toString() || '0',
+        ratingCount: p.rating_count?.toString() || '0',
+      };
+
+      setProduct(productData);
+    } catch (err) {
+      const errorMessage = getSafeErrorMessage(err);
+      setError(errorMessage);
+      console.error('Error fetching product:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [productId]);
+
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
+
+  return {
+    product,
+    loading,
+    error,
+    refetch: fetchProduct,
+  };
+}
+
+
+// ==================== Post Review Hook ====================
+
+export function usePostReview() {
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const [loading, setLoading] = useState(false);
+
+  const postReview = async (
+    productId: string,
+    rating: number,
+    comment: string,
+    onSuccess?: () => void,
+    onError?: (error: string) => void
+  ) => {
+    setLoading(true);
+
+    try {
+      const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
+      const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
+
+      const tx = new Transaction();
+
+      tx.moveCall({
+        target: `${PACKAGE_ID}::marketplace::post_review`,
+        arguments: [
+          tx.object(MARKETPLACE_ID),
+          tx.object(productId),
+          tx.pure.u8(rating),
+          tx.pure.string(comment),
+          tx.object('0x6'), // Clock
+        ],
+      });
+
+      signAndExecute(
+        {
+          transaction: tx,
+        },
+        {
+          onSuccess: (result) => {
+            console.log('Review posted:', result);
+            toast.success('Review posted successfully! ⭐');
+            if (onSuccess) onSuccess();
+          },
+          onError: (error) => {
+            console.error('Review failed:', error);
+            const errorMsg = error.message || 'Failed to post review';
+            toast.error(errorMsg);
+            if (onError) onError(errorMsg);
+          },
+        }
+      );
+    } catch (error: any) {
+      console.error('Error:', error);
+      toast.error(error.message);
+      if (onError) onError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    postReview,
+    loading,
+  };
+}
+
+// ==================== Fetch Product Reviews Hook ====================
+
+export function useFetchProductReviews(productId: string | null) {
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchReviews = useCallback(async () => {
+    if (!productId) {
+      setReviews([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${productId}/reviews`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch reviews');
+      }
+
+      const data = await response.json();
+      setReviews(data.reviews || []);
+    } catch (err: any) {
+      const errorMessage = getSafeErrorMessage(err);
+      setError(errorMessage);
+      console.error('Error fetching reviews:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [productId]);
+
+  useEffect(() => {
+    fetchReviews();
+  }, [fetchReviews]);
+
+  return {
+    reviews,
+    loading,
+    error,
+    refetch: fetchReviews,
+  };
 }
 
 export default {
@@ -526,4 +773,6 @@ export default {
   useFollowSeller,
   useFetchProducts,
   useUserProducts,
+  useFetchProductsByCategory,
+  useFetchProduct,
 };

@@ -281,6 +281,29 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
+
+// ==================== Purchase Endpoints ====================
+
+// Get purchases by buyer
+app.get('/api/purchases/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query(
+      `SELECT * FROM purchases 
+       WHERE buyer = $1 
+       ORDER BY created_at DESC`,
+      [address]
+    );
+
+    res.json({ purchases: result.rows });
+  } catch (error) {
+    console.error('Error fetching purchases:', error);
+    res.status(500).json({ error: 'Failed to fetch purchases' });
+  }
+});
+
+
 // ==================== Start Server ====================
 
 app.listen(PORT, () => {

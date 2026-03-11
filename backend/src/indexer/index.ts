@@ -15,11 +15,47 @@ const EVENT_TYPES = {
 };
 
 // Store product in database
+// Store product in database
+// Store product in database
 async function handleProductListed(event: any) {
   try {
-    const { product_id, seller, title, description, price, image_url, category, timestamp } = event.parsedJson;
+    const eventData = event.parsedJson || {};
+    
+    const product_id = eventData.product_id;
+    const seller = eventData.seller;
+    const title = eventData.title;
+    const price = eventData.price;
+    const timestamp = eventData.timestamp || event.timestampMs;
 
-    console.log(`📦 New Product Listed: ${title}`);
+    console.log(`📦 New Product Listed: ${title} (${product_id})`);
+
+    if (!product_id || !seller || !title || !price) {
+      console.error('❌ Missing required fields');
+      return;
+    }
+
+    // Fetch the full Product object from blockchain
+    console.log(`   🔍 Fetching product details from chain...`);
+    const productObj = await suiClient.getObject({
+      id: product_id,
+      options: { showContent: true },
+    });
+
+    const content = productObj.data?.content;
+    if (content?.dataType !== 'moveObject') {
+      console.error('❌ Invalid product object');
+      return;
+    }
+
+    const fields = (content as any).fields;
+    
+    const description = fields.description || 'No description';
+    const image_url = fields.image_url || 'https://via.placeholder.com/400';
+    const category = fields.category || 'Uncategorized';
+
+    console.log(`   ✅ Description: ${description}`);
+    console.log(`   ✅ Image: ${image_url}`);
+    console.log(`   ✅ Category: ${category}`);
 
     await pool.query(
       `INSERT INTO products (id, seller, title, description, price, image_url, category, is_available, created_at)

@@ -6,6 +6,8 @@ import type { AppProps } from 'next/app';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SuiClientProvider, WalletProvider, createNetworkConfig } from '@mysten/dapp-kit';
 import { Toaster } from 'react-hot-toast';
+import Layout from '@/components/Layout';
+import { CartProvider } from '@/contexts/CartContext';
 import '@mysten/dapp-kit/dist/index.css';
 import '../styles/globals.css';
 
@@ -41,29 +43,33 @@ export default function App({ Component, pageProps }: AppProps) {
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={networkConfig} defaultNetwork={network}>
         <WalletProvider autoConnect>
-          <Component {...pageProps} />
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: '#363636',
-                color: '#fff',
-              },
-              success: {
-                iconTheme: {
-                  primary: '#10b981',
-                  secondary: '#fff',
+          <CartProvider>
+            <Layout>
+              <Component {...pageProps} />
+            </Layout>
+            <Toaster 
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: '#363636',
+                  color: '#fff',
                 },
-              },
-              error: {
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: '#fff',
+                success: {
+                  iconTheme: {
+                    primary: '#10b981',
+                    secondary: '#fff',
+                  },
                 },
-              },
-            }}
-          />
+                error: {
+                  iconTheme: {
+                    primary: '#ef4444',
+                    secondary: '#fff',
+                  },
+                },
+              }}
+            />
+          </CartProvider>
         </WalletProvider>
       </SuiClientProvider>
     </QueryClientProvider>
