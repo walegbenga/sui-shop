@@ -5,6 +5,7 @@
 import type { AppProps } from 'next/app';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SuiClientProvider, WalletProvider, createNetworkConfig } from '@mysten/dapp-kit';
+//import { EnokiProvider } from '@/contexts/EnokiContext';
 import { Toaster } from 'react-hot-toast';
 import Layout from '@/components/Layout';
 import { CartProvider } from '@/contexts/CartContext';

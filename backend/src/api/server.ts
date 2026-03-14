@@ -24,62 +24,104 @@ app.get('/health', (req, res) => {
 
 // ==================== Product Endpoints ====================
 
-// Get all products (with pagination)
+// Get all products with filters
 app.get('/api/products', async (req, res) => {
   try {
-    const { page = 1, limit = 20, category, available = 'true' } = req.query;
+    const { 
+      page = 1, 
+      limit = 20, 
+      category, 
+      available, 
+      minPrice, 
+      maxPrice, 
+      search,
+      sortBy = 'created_at',
+      sortOrder = 'DESC'
+    } = req.query;
+
     const offset = (Number(page) - 1) * Number(limit);
 
-    let query = 'SELECT * FROM products WHERE 1=1';
-    const params: any[] = [];
-    let paramCount = 1;
+    // Build WHERE clause
+    let whereConditions = [];
+    let queryParams: any[] = [];
+    let paramIndex = 1;
 
-    // Filter by availability
-    if (available === 'true') {
-      query += ` AND is_available = $${paramCount}`;
-      params.push(true);
-      paramCount++;
-    }
-
-    // Filter by category
+    // Category filter
     if (category) {
-      query += ` AND category = $${paramCount}`;
-      params.push(category);
-      paramCount++;
+      whereConditions.push(`category = $${paramIndex}`);
+      queryParams.push(category);
+      paramIndex++;
     }
 
-    // Add ordering and pagination
-    query += ` ORDER BY created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    params.push(Number(limit), offset);
+    // Available filter
+    if (available !== undefined) {
+      whereConditions.push(`is_available = $${paramIndex}`);
+      queryParams.push(available === 'true');
+      paramIndex++;
+    }
 
-    const result = await pool.query(query, params);
+    // Price range filter (expects values in MIST)
+    if (minPrice !== undefined && minPrice !== null && minPrice !== '') {
+      const minPriceNum = Number(minPrice);
+      if (!isNaN(minPriceNum)) {
+        whereConditions.push(`price >= $${paramIndex}`);
+        queryParams.push(minPriceNum);
+        paramIndex++;
+      }
+    }
+
+    if (maxPrice !== undefined && maxPrice !== null && maxPrice !== '') {
+      const maxPriceNum = Number(maxPrice);
+      if (!isNaN(maxPriceNum)) {
+        whereConditions.push(`price <= $${paramIndex}`);
+        queryParams.push(maxPriceNum);
+        paramIndex++;
+      }
+    }
+
+    // Search filter
+    if (search) {
+      whereConditions.push(`(
+        title ILIKE $${paramIndex} OR 
+        description ILIKE $${paramIndex} OR 
+        category ILIKE $${paramIndex}
+      )`);
+      queryParams.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.length > 0 
+      ? `WHERE ${whereConditions.join(' AND ')}`
+      : '';
+
+    // Validate sort column
+    const validSortColumns = ['created_at', 'price', 'total_sales', 'title'];
+    const sortColumn = validSortColumns.includes(sortBy as string) ? sortBy : 'created_at';
+    const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) FROM products WHERE 1=1';
-    const countParams: any[] = [];
-    let countParamCount = 1;
+    const countResult = await pool.query(
+      `SELECT COUNT(*) as total FROM products ${whereClause}`,
+      queryParams
+    );
+    const totalCount = parseInt(countResult.rows[0].total);
 
-    if (available === 'true') {
-      countQuery += ` AND is_available = $${countParamCount}`;
-      countParams.push(true);
-      countParamCount++;
-    }
-
-    if (category) {
-      countQuery += ` AND category = $${countParamCount}`;
-      countParams.push(category);
-    }
-
-    const countResult = await pool.query(countQuery, countParams);
-    const total = parseInt(countResult.rows[0].count);
+    // Get products
+    const result = await pool.query(
+      `SELECT * FROM products 
+       ${whereClause}
+       ORDER BY ${sortColumn} ${order}
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...queryParams, Number(limit), offset]
+    );
 
     res.json({
       products: result.rows,
       pagination: {
         page: Number(page),
         limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit)),
+        totalCount: totalCount,
+        totalPages: Math.ceil(totalCount / Number(limit)),
       },
     });
   } catch (error) {
@@ -303,6 +345,201 @@ app.get('/api/purchases/:address', async (req, res) => {
   }
 });
 
+// ==================== Social Features Endpoints ====================
+
+// Follow a seller
+app.post('/api/sellers/:address/follow', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { followerAddress } = req.body;
+
+    if (!followerAddress) {
+      return res.status(400).json({ error: 'Follower address required' });
+    }
+
+    // Insert follower relationship
+    await pool.query(
+      `INSERT INTO followers (follower_address, seller_address, created_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (follower_address, seller_address) DO NOTHING`,
+      [followerAddress, address]
+    );
+
+    // Update seller follower count
+    await pool.query(
+      `UPDATE sellers 
+       SET follower_count = (SELECT COUNT(*) FROM followers WHERE seller_address = $1)
+       WHERE address = $1`,
+      [address]
+    );
+
+    res.json({ success: true, message: 'Followed successfully' });
+  } catch (error) {
+    console.error('Error following seller:', error);
+    res.status(500).json({ error: 'Failed to follow seller' });
+  }
+});
+
+// Unfollow a seller
+app.delete('/api/sellers/:address/follow', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { followerAddress } = req.body;
+
+    if (!followerAddress) {
+      return res.status(400).json({ error: 'Follower address required' });
+    }
+
+    // Remove follower relationship
+    await pool.query(
+      `DELETE FROM followers 
+       WHERE follower_address = $1 AND seller_address = $2`,
+      [followerAddress, address]
+    );
+
+    // Update seller follower count
+    await pool.query(
+      `UPDATE sellers 
+       SET follower_count = (SELECT COUNT(*) FROM followers WHERE seller_address = $1)
+       WHERE address = $1`,
+      [address]
+    );
+
+    res.json({ success: true, message: 'Unfollowed successfully' });
+  } catch (error) {
+    console.error('Error unfollowing seller:', error);
+    res.status(500).json({ error: 'Failed to unfollow seller' });
+  }
+});
+
+// Check if user is following a seller
+app.get('/api/sellers/:address/following/:userAddress', async (req, res) => {
+  try {
+    const { address, userAddress } = req.params;
+
+    const result = await pool.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM followers 
+        WHERE follower_address = $1 AND seller_address = $2
+      ) as is_following`,
+      [userAddress, address]
+    );
+
+    res.json({ isFollowing: result.rows[0].is_following });
+  } catch (error) {
+    console.error('Error checking follow status:', error);
+    res.status(500).json({ error: 'Failed to check follow status' });
+  }
+});
+
+// Get user's followed sellers
+app.get('/api/users/:address/following', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query(
+      `SELECT s.*, f.created_at as followed_at
+       FROM sellers s
+       JOIN followers f ON s.address = f.seller_address
+       WHERE f.follower_address = $1
+       ORDER BY f.created_at DESC`,
+      [address]
+    );
+
+    res.json({ following: result.rows });
+  } catch (error) {
+    console.error('Error fetching following:', error);
+    res.status(500).json({ error: 'Failed to fetch following' });
+  }
+});
+
+// ==================== Favorites/Wishlist Endpoints ====================
+
+// Add product to favorites
+app.post('/api/favorites', async (req, res) => {
+  try {
+    const { userAddress, productId } = req.body;
+
+    if (!userAddress || !productId) {
+      return res.status(400).json({ error: 'User address and product ID required' });
+    }
+
+    await pool.query(
+      `INSERT INTO favorites (user_address, product_id, created_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_address, product_id) DO NOTHING`,
+      [userAddress, productId]
+    );
+
+    res.json({ success: true, message: 'Added to favorites' });
+  } catch (error) {
+    console.error('Error adding to favorites:', error);
+    res.status(500).json({ error: 'Failed to add to favorites' });
+  }
+});
+
+// Remove product from favorites
+app.delete('/api/favorites', async (req, res) => {
+  try {
+    const { userAddress, productId } = req.body;
+
+    if (!userAddress || !productId) {
+      return res.status(400).json({ error: 'User address and product ID required' });
+    }
+
+    await pool.query(
+      `DELETE FROM favorites 
+       WHERE user_address = $1 AND product_id = $2`,
+      [userAddress, productId]
+    );
+
+    res.json({ success: true, message: 'Removed from favorites' });
+  } catch (error) {
+    console.error('Error removing from favorites:', error);
+    res.status(500).json({ error: 'Failed to remove from favorites' });
+  }
+});
+
+// Get user's favorite products
+app.get('/api/users/:address/favorites', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query(
+      `SELECT p.*, f.created_at as favorited_at
+       FROM products p
+       JOIN favorites f ON p.id = f.product_id
+       WHERE f.user_address = $1
+       ORDER BY f.created_at DESC`,
+      [address]
+    );
+
+    res.json({ favorites: result.rows });
+  } catch (error) {
+    console.error('Error fetching favorites:', error);
+    res.status(500).json({ error: 'Failed to fetch favorites' });
+  }
+});
+
+// Check if product is favorited
+app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
+  try {
+    const { userAddress, productId } = req.params;
+
+    const result = await pool.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM favorites 
+        WHERE user_address = $1 AND product_id = $2
+      ) as is_favorited`,
+      [userAddress, productId]
+    );
+
+    res.json({ isFavorited: result.rows[0].is_favorited });
+  } catch (error) {
+    console.error('Error checking favorite status:', error);
+    res.status(500).json({ error: 'Failed to check favorite status' });
+  }
+});
 
 // ==================== Start Server ====================
 

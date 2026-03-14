@@ -2,6 +2,10 @@
  * Sui Shop Mobile App
  * Main entry point with wallet onboarding
  */
+import 'react-native-get-random-values';
+import { Buffer } from 'buffer';
+
+global.Buffer = Buffer;
 
 import React, { useEffect, useState } from 'react';
 import {

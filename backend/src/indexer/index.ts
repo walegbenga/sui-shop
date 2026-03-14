@@ -1,269 +1,263 @@
-/**
- * Sui Blockchain Indexer
- * Watches events and syncs data to PostgreSQL
- */
+import { SuiClient } from '@mysten/sui/client';
+import { pool, initializeDatabase } from '../config/database';
+import * as dotenv from 'dotenv';
 
-import { suiClient, PACKAGE_ID, MARKETPLACE_ID } from '../config/sui';
-import { pool } from '../config/database';
+dotenv.config();
 
-// Event types from smart contract
-const EVENT_TYPES = {
-  PRODUCT_LISTED: `${PACKAGE_ID}::marketplace::ProductListed`,
-  PRODUCT_PURCHASED: `${PACKAGE_ID}::marketplace::ProductPurchased`,
-  REVIEW_POSTED: `${PACKAGE_ID}::marketplace::ReviewPosted`,
-  SELLER_FOLLOWED: `${PACKAGE_ID}::marketplace::SellerFollowed`,
-};
+const NETWORK_URL = 'https://fullnode.testnet.sui.io:443';
+const PACKAGE_ID = process.env.PACKAGE_ID!;
+const MARKETPLACE_ID = process.env.MARKETPLACE_ID!;
+const POLL_INTERVAL = 5000; // 5 seconds
 
-// Store product in database
-// Store product in database
-// Store product in database
-async function handleProductListed(event: any) {
-  try {
-    const eventData = event.parsedJson || {};
-    
-    const product_id = eventData.product_id;
-    const seller = eventData.seller;
-    const title = eventData.title;
-    const price = eventData.price;
-    const timestamp = eventData.timestamp || event.timestampMs;
+// Initialize Sui client
+const suiClient = new SuiClient({ url: NETWORK_URL });
 
-    console.log(`📦 New Product Listed: ${title} (${product_id})`);
+console.log('✅ Sui Client connected to testnet');
+console.log(`📦 Package ID: ${PACKAGE_ID}`);
+console.log(`🏪 Marketplace ID: ${MARKETPLACE_ID}`);
 
-    if (!product_id || !seller || !title || !price) {
-      console.error('❌ Missing required fields');
-      return;
-    }
-
-    // Fetch the full Product object from blockchain
-    console.log(`   🔍 Fetching product details from chain...`);
-    const productObj = await suiClient.getObject({
-      id: product_id,
-      options: { showContent: true },
-    });
-
-    const content = productObj.data?.content;
-    if (content?.dataType !== 'moveObject') {
-      console.error('❌ Invalid product object');
-      return;
-    }
-
-    const fields = (content as any).fields;
-    
-    const description = fields.description || 'No description';
-    const image_url = fields.image_url || 'https://via.placeholder.com/400';
-    const category = fields.category || 'Uncategorized';
-
-    console.log(`   ✅ Description: ${description}`);
-    console.log(`   ✅ Image: ${image_url}`);
-    console.log(`   ✅ Category: ${category}`);
-
-    await pool.query(
-      `INSERT INTO products (id, seller, title, description, price, image_url, category, is_available, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (id) DO UPDATE SET
-         title = EXCLUDED.title,
-         description = EXCLUDED.description,
-         price = EXCLUDED.price,
-         image_url = EXCLUDED.image_url,
-         category = EXCLUDED.category,
-         is_available = EXCLUDED.is_available,
-         updated_at = CURRENT_TIMESTAMP`,
-      [product_id, seller, title, description, price, image_url, category, true, timestamp]
-    );
-
-    console.log(`✅ Stored product: ${product_id}`);
-  } catch (error) {
-    console.error('❌ Error handling ProductListed event:', error);
-  }
+// Get last processed checkpoint
+async function getLastCheckpoint(): Promise<bigint> {
+  const result = await pool.query(
+    'SELECT last_processed_checkpoint FROM indexer_state WHERE id = 1'
+  );
+  return BigInt(result.rows[0]?.last_processed_checkpoint || 0);
 }
 
-// Store purchase in database
-async function handleProductPurchased(event: any) {
-  try {
-    const { product_id, buyer, seller, price, platform_fee, timestamp } = event.parsedJson;
-
-    console.log(`💰 Product Purchased: ${product_id}`);
-
-    await pool.query(
-      `INSERT INTO purchases (product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [product_id, buyer, seller, price, platform_fee, event.id.txDigest, timestamp]
-    );
-
-    await pool.query(
-      `UPDATE products 
-       SET total_sales = total_sales + 1,
-           total_revenue = total_revenue + $1,
-           is_available = false,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2`,
-      [price, product_id]
-    );
-
-    await pool.query(
-      `UPDATE sellers 
-       SET total_sales = total_sales + 1,
-           total_revenue = total_revenue + $1,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE address = $2`,
-      [price, seller]
-    );
-
-    console.log(`✅ Recorded purchase: ${product_id}`);
-  } catch (error) {
-    console.error('❌ Error handling ProductPurchased event:', error);
-  }
-}
-
-// Store review in database
-async function handleReviewPosted(event: any) {
-  try {
-    const { product_id, reviewer, rating, comment, timestamp } = event.parsedJson;
-
-    console.log(`⭐ Review Posted: ${rating}/5 for ${product_id}`);
-
-    await pool.query(
-      `INSERT INTO reviews (product_id, reviewer, rating, comment, created_at)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (product_id, reviewer) DO UPDATE SET
-         rating = EXCLUDED.rating,
-         comment = EXCLUDED.comment`,
-      [product_id, reviewer, rating, comment, timestamp]
-    );
-
-    await pool.query(
-      `UPDATE products 
-       SET rating_sum = rating_sum + $1,
-           rating_count = rating_count + 1,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2`,
-      [rating, product_id]
-    );
-
-    console.log(`✅ Stored review for: ${product_id}`);
-  } catch (error) {
-    console.error('❌ Error handling ReviewPosted event:', error);
-  }
-}
-
-// Handle seller followed event
-async function handleSellerFollowed(event: any) {
-  try {
-    const { seller } = event.parsedJson;
-
-    console.log(`👥 Seller Followed: ${seller}`);
-
-    await pool.query(
-      `UPDATE sellers 
-       SET follower_count = follower_count + 1,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE address = $1`,
-      [seller]
-    );
-
-    console.log(`✅ Updated follower count for: ${seller}`);
-  } catch (error) {
-    console.error('❌ Error handling SellerFollowed event:', error);
-  }
+// Update last processed checkpoint
+async function updateLastCheckpoint(checkpoint: bigint) {
+  await pool.query(
+    'UPDATE indexer_state SET last_processed_checkpoint = $1, updated_at = NOW() WHERE id = 1',
+    [checkpoint.toString()]
+  );
 }
 
 // Process events
-async function processEvent(event: any) {
-  const eventType = event.type;
+async function processEvents() {
+  try {
+    const lastCheckpoint = await getLastCheckpoint();
 
-  switch (eventType) {
-    case EVENT_TYPES.PRODUCT_LISTED:
-      await handleProductListed(event);
-      break;
-    case EVENT_TYPES.PRODUCT_PURCHASED:
-      await handleProductPurchased(event);
-      break;
-    case EVENT_TYPES.REVIEW_POSTED:
-      await handleReviewPosted(event);
-      break;
-    case EVENT_TYPES.SELLER_FOLLOWED:
-      await handleSellerFollowed(event);
-      break;
-    default:
-      console.log(`ℹ️  Unknown event type: ${eventType}`);
-  }
-}
+    // Query events from the marketplace module
+    const events = await suiClient.queryEvents({
+      query: {
+        MoveEventModule: {
+          package: PACKAGE_ID,
+          module: 'marketplace',
+        },
+      },
+      order: 'ascending',
+    });
 
-// Get last synced checkpoint
-async function getLastCheckpoint(): Promise<string> {
-  const result = await pool.query('SELECT last_synced_checkpoint FROM indexer_state WHERE id = 1');
-  return result.rows[0]?.last_synced_checkpoint?.toString() || '0';
-}
+    if (!events.data || events.data.length === 0) {
+      return;
+    }
 
-// Update last synced checkpoint
-async function updateLastCheckpoint(checkpoint: string) {
+    console.log(`📊 Found ${events.data.length} events`);
+
+    for (const event of events.data) {
+      const eventType = event.type.split('::').pop();
+      const parsedJson = event.parsedJson;
+
+      console.log(`\n🔔 Event: ${eventType}`);
+
+      // Handle ProductListed event
+      if (eventType === 'ProductListed') {
+        const productId = (parsedJson as any).product_id;
+        const seller = (parsedJson as any).seller;
+        const title = (parsedJson as any).title;
+        const price = (parsedJson as any).price;
+        const timestamp = (parsedJson as any).timestamp;
+
+        console.log(`📦 Product Listed: ${title} (${productId})`);
+        console.log(`   Seller: ${seller}`);
+        console.log(`   Price: ${price} MIST`);
+        console.log(`   Timestamp: ${timestamp}`);
+
+        // Fetch full product object to get description, image_url, category
+        try {
+          const productObject = await suiClient.getObject({
+            id: productId,
+            options: { showContent: true },
+          });
+
+          if (productObject.data?.content) {
+            const content = productObject.data.content as any;
+            const fields = content.fields;
+
+            const description = fields.description || '';
+            const imageUrl = fields.image_url || '';
+            const category = fields.category || 'Other';
+
+            console.log(`   Description: ${description.substring(0, 50)}...`);
+            console.log(`   Image URL: ${imageUrl}`);
+            console.log(`   Category: ${category}`);
+
+            // Insert or update product in database
+            await pool.query(
+              `INSERT INTO products (
+                id, seller, title, description, price, image_url, category, 
+                is_available, total_sales, rating_sum, rating_count, created_at, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              ON CONFLICT (id) 
+              DO UPDATE SET 
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                price = EXCLUDED.price,
+                image_url = EXCLUDED.image_url,
+                category = EXCLUDED.category,
+                updated_at = EXCLUDED.updated_at`,
+              [
+                productId,
+                seller,
+                title,
+                description,
+                price,
+                imageUrl,
+                category,
+                true, // is_available
+                0,    // total_sales
+                0,    // rating_sum
+                0,    // rating_count
+                timestamp, // created_at from blockchain
+                timestamp, // updated_at from blockchain
+              ]
+            );
+
+            console.log(`✅ Product stored in database`);
+
+            // Ensure seller exists
+            await pool.query(
+              `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned)
+               VALUES ($1, 0, 0, 0, FALSE)
+               ON CONFLICT (address) DO NOTHING`,
+              [seller]
+            );
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching product object: ${error}`);
+        }
+      }
+
+      // Handle ProductPurchased event
+else if (eventType === 'ProductPurchased') {
+  const productId = (parsedJson as any).product_id;
+  const buyer = (parsedJson as any).buyer;
+  const seller = (parsedJson as any).seller;
+  const price = (parsedJson as any).price;
+  const platformFee = (parsedJson as any).platform_fee;
+  const timestamp = (parsedJson as any).timestamp;
+
+  // Generate purchase ID from transaction digest and event sequence
+  const purchaseId = `${event.id.txDigest}-${event.id.eventSeq}`;
+
+  console.log(`💰 Product Purchased: ${productId}`);
+  console.log(`   Purchase ID: ${purchaseId}`);
+  console.log(`   Buyer: ${buyer}`);
+  console.log(`   Seller: ${seller}`);
+  console.log(`   Price: ${price} MIST`);
+
+  // Update product availability and sales count
   await pool.query(
-    'UPDATE indexer_state SET last_synced_checkpoint = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1',
-    [checkpoint]
+    `UPDATE products 
+     SET is_available = FALSE, 
+         total_sales = total_sales + 1,
+         updated_at = $1
+     WHERE id = $2`,
+    [timestamp, productId]
   );
+
+  // Record purchase
+  await pool.query(
+    `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (id) DO NOTHING`,
+    [purchaseId, productId, buyer, seller, price, platformFee, event.id.txDigest, timestamp]
+  );
+
+  // Update seller stats
+  await pool.query(
+    `UPDATE sellers 
+     SET total_sales = total_sales + 1,
+         total_revenue = total_revenue + $1,
+         updated_at = NOW()
+     WHERE address = $2`,
+    [price, seller]
+  );
+
+  console.log(`✅ Purchase recorded`);
+}
+
+      // Handle ReviewPosted event
+      else if (eventType === 'ReviewPosted') {
+        const productId = (parsedJson as any).product_id;
+        const reviewer = (parsedJson as any).reviewer;
+        const rating = (parsedJson as any).rating;
+        const comment = (parsedJson as any).comment;
+        const timestamp = (parsedJson as any).timestamp;
+
+        console.log(`⭐ Review Posted: ${productId}`);
+        console.log(`   Reviewer: ${reviewer}`);
+        console.log(`   Rating: ${rating}/5`);
+
+        // Insert review
+        await pool.query(
+          `INSERT INTO reviews (product_id, reviewer, rating, comment, created_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (product_id, reviewer) 
+           DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment`,
+          [productId, reviewer, rating, comment, timestamp]
+        );
+
+        // Update product rating stats
+        await pool.query(
+          `UPDATE products 
+           SET rating_sum = (
+                 SELECT COALESCE(SUM(rating), 0) FROM reviews WHERE product_id = $1
+               ),
+               rating_count = (
+                 SELECT COUNT(*) FROM reviews WHERE product_id = $1
+               ),
+               updated_at = $2
+           WHERE id = $1`,
+          [productId, timestamp]
+        );
+
+        console.log(`✅ Review stored`);
+      }
+
+      // Unknown event
+      else {
+        console.log(`❓ Unknown event type: ${eventType}`);
+      }
+    }
+
+    // Update checkpoint if we processed events
+    if (events.data.length > 0) {
+      const latestCheckpoint = BigInt(events.data[events.data.length - 1].id.eventSeq);
+      await updateLastCheckpoint(latestCheckpoint);
+    }
+
+  } catch (error) {
+    console.error('❌ Error processing events:', error);
+  }
 }
 
 // Main indexer loop
 async function startIndexer() {
-  console.log('🚀 Starting Sui Blockchain Indexer...');
-  console.log(`📡 Watching events for package: ${PACKAGE_ID}`);
+  console.log('🚀 Starting Sui Blockchain Indexer...\n');
 
-  let lastCheckpoint = await getLastCheckpoint();
-  console.log(`📍 Starting from checkpoint: ${lastCheckpoint}`);
+  // Initialize database
+  await initializeDatabase();
 
-  // Poll for events every 5 seconds
+  // Start polling
   setInterval(async () => {
-    try {
-      console.log('🔄 Polling for new events...');
-      
-      const events = await suiClient.queryEvents({
-        query: { MoveEventModule: { package: PACKAGE_ID, module: 'marketplace' } },
-        limit: 50,
-      });
+    console.log('🔄 Polling for new events...');
+    await processEvents();
+  }, POLL_INTERVAL);
 
-      if (events.data.length > 0) {
-        console.log(`📨 Processing ${events.data.length} events...`);
-
-        for (const event of events.data) {
-          await processEvent(event);
-        }
-
-        const latestEvent = events.data[events.data.length - 1];
-        if (latestEvent.timestampMs) {
-          await updateLastCheckpoint(latestEvent.timestampMs);
-          lastCheckpoint = latestEvent.timestampMs;
-        }
-
-        console.log(`✅ Synced to checkpoint: ${lastCheckpoint}`);
-      } else {
-        console.log('ℹ️  No new events found');
-      }
-    } catch (error) {
-      console.error('❌ Error in indexer loop:', error);
-    }
-  }, 5000);
-
-  console.log('✅ Indexer started successfully! Polling every 5 seconds...\n');
-
-  // Keep process alive
-  return new Promise(() => {});
+  // Initial fetch
+  await processEvents();
 }
 
-// Handle shutdown gracefully
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down indexer...');
-  await pool.end();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Shutting down indexer...');
-  await pool.end();
-  process.exit(0);
-});
-
 // Start the indexer
-startIndexer().catch((error) => {
-  console.error('❌ Fatal error:', error);
-  process.exit(1);
-});
+startIndexer().catch(console.error);

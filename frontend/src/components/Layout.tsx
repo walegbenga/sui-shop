@@ -1,11 +1,11 @@
 import { ReactNode, Fragment } from 'react';
-import { ConnectButton } from '@mysten/dapp-kit';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useCart } from '@/contexts/CartContext';
 import { ShoppingCartIcon } from '@heroicons/react/24/outline';
 import { Dialog, Transition } from '@headlessui/react';
+import AuthButton from './AuthButton';
 import { useState } from 'react';
 
 interface LayoutProps {
@@ -78,7 +78,8 @@ export default function Layout({ children }: LayoutProps) {
                   + List Product
                 </Link>
               )}
-              <ConnectButton />
+              
+              <AuthButton />
             </div>
           </div>
 
@@ -108,7 +109,7 @@ export default function Layout({ children }: LayoutProps) {
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500">
-            © 2026 Sui Shop. Built on Sui Blockchain. 🚀
+            © 2026 Sui Shop. Built by <span className="font-semibold text-indigo-600">CoA Tech</span> on the Sui Blockchain. 🚀
           </p>
         </div>
       </footer>

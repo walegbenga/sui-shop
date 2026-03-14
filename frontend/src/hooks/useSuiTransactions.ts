@@ -1,454 +1,83 @@
-/**
- * Sui Transaction Hooks - Updated for @mysten/sui v2.6.0
- */
-
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { 
-  useSignAndExecuteTransaction, 
-  useCurrentAccount, 
-  useSuiClient 
-} from '@mysten/dapp-kit';
-import { toast } from 'react-hot-toast';
-//import type { SuiObjectResponse } from '@mysten/sui/client';
-import {
-  buildTransactionTarget,
-  getMarketplaceId,
-  GAS_BUDGET,
-  OBJECT_TYPES,
-} from '../config/sui';
-import {
-  ProductSchema,
-  ReviewSchema,
-  ProfileSchema,
-  suiToMist,
-  transactionRateLimiter,
-  listingRateLimiter,
-  getSafeErrorMessage,
-  createTransactionWithTimeout,
-} from '../utils/security';
+import toast from 'react-hot-toast';
 
-// Types
-interface TransactionState {
-  loading: boolean;
-  error: string | null;
-  success: boolean;
+// Helper function to safely extract error messages
+function getSafeErrorMessage(error: any): string {
+  if (typeof error === 'string') return error;
+  if (error?.message) return error.message;
+  if (error?.toString) return error.toString();
+  return 'An unknown error occurred';
 }
 
-interface Product {
-  id: string;
-  seller: string;
-  title: string;
-  description: string;
-  price: string;
-  imageUrl: string;
-  category: string;
-  isAvailable: boolean;
-  createdAt: string;
-  totalSales: string;
-  totalRevenue: string;
-  ratingSum: string;
-  ratingCount: string;
-}
+// ==================== Fetch Products with Filters Hook ====================
 
-// Transaction Hook
-export function useSecureTransaction() {
-  const [state, setState] = useState<TransactionState>({
-    loading: false,
-    error: null,
-    success: false,
+export function useFetchProducts(filters?: {
+  category?: string | null;
+  minPrice?: number;
+  maxPrice?: number;
+  search?: string;
+  sortBy?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    totalCount: 0,
+    totalPages: 0,
   });
 
-  const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  const account = useCurrentAccount();
-
-  const executeTransaction = useCallback(
-    async (
-      transaction: Transaction,
-      options?: {
-        onSuccess?: (result: any) => void;
-        onError?: (error: Error) => void;
-        rateLimitKey?: string;
-      }
-    ) => {
-      if (!account) {
-        const error = 'Please connect your wallet first';
-        setState({ loading: false, error, success: false });
-        toast.error(error);
-        return null;
-      }
-
-      if (options?.rateLimitKey && !transactionRateLimiter.isAllowed(options.rateLimitKey)) {
-        const error = 'Too many transactions. Please wait.';
-        setState({ loading: false, error, success: false });
-        toast.error(error);
-        return null;
-      }
-
-      setState({ loading: true, error: null, success: false });
-
-      try {
-        const result = await createTransactionWithTimeout(
-          signAndExecute({ transaction })
-        );
-
-        setState({ loading: false, error: null, success: true });
-        toast.success('Transaction successful!');
-        options?.onSuccess?.(result);
-        return result;
-      } catch (error) {
-        const errorMessage = getSafeErrorMessage(error);
-        setState({ loading: false, error: errorMessage, success: false });
-        toast.error(errorMessage);
-        options?.onError?.(error as Error);
-        return null;
-      }
-    },
-    [account, signAndExecute]
-  );
-
-  return {
-    ...state,
-    executeTransaction,
-    resetState: () => setState({ loading: false, error: null, success: false }),
-  };
-}
-
-// List Product Hook
-export function useListProduct() {
-  const { executeTransaction, ...transactionState } = useSecureTransaction();
-  const account = useCurrentAccount();
-
-  const listProduct = useCallback(
-    async (productData: {
-      title: string;
-      description: string;
-      price: number;
-      imageUrl: string;
-      category: string;
-    }) => {
-      if (!account) {
-        toast.error('Please connect your wallet');
-        return null;
-      }
-
-      try {
-        ProductSchema.parse(productData);
-      } catch (error) {
-        toast.error('Invalid product data');
-        return null;
-      }
-
-      if (!listingRateLimiter.isAllowed(account.address)) {
-        toast.error('Listing limit exceeded. Please try again later.');
-        return null;
-      }
-
-      const tx = new Transaction();
-      const marketplaceId = getMarketplaceId();
-
-      tx.moveCall({
-        target: buildTransactionTarget('list_product'),
-        arguments: [
-          tx.object(marketplaceId),
-          tx.pure.string(productData.title),
-          tx.pure.string(productData.description),
-          tx.pure.u64(suiToMist(productData.price)),
-          tx.pure.string(productData.imageUrl),
-          tx.pure.string(productData.category),
-          tx.object('0x6'), // Clock object
-        ],
-      });
-
-      return executeTransaction(tx, {
-        rateLimitKey: `list_${account.address}`,
-      });
-    },
-    [account, executeTransaction]
-  );
-
-  return { listProduct, ...transactionState };
-}
-
-// Purchase Product Hook
-export function usePurchaseProduct() {
-  const { executeTransaction, ...transactionState } = useSecureTransaction();
-  const account = useCurrentAccount();
-
-  const purchaseProduct = useCallback(
-    async (productId: string, price: number) => {
-      if (!account) {
-        toast.error('Please connect your wallet');
-        return null;
-      }
-
-      const tx = new Transaction();
-      const marketplaceId = getMarketplaceId();
-
-      const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(suiToMist(price))]);
-
-      tx.moveCall({
-        target: buildTransactionTarget('purchase_product'),
-        arguments: [
-          tx.object(marketplaceId),
-          tx.object(productId),
-          coin,
-          tx.object('0x6'),
-        ],
-      });
-
-      return executeTransaction(tx, {
-        rateLimitKey: `purchase_${account.address}`,
-      });
-    },
-    [account, executeTransaction]
-  );
-
-  return { purchaseProduct, ...transactionState };
-}
-
-// Post Review Hook
-/*export function usePostReview() {
-  const { executeTransaction, ...transactionState } = useSecureTransaction();
-  const account = useCurrentAccount();
-
-  const postReview = useCallback(
-    async (productId: string, rating: number, comment: string) => {
-      if (!account) {
-        toast.error('Please connect your wallet');
-        return null;
-      }
-
-      try {
-        ReviewSchema.parse({ rating, comment });
-      } catch (error) {
-        toast.error('Invalid review data');
-        return null;
-      }
-
-      const tx = new Transaction();
-
-      tx.moveCall({
-        target: buildTransactionTarget('post_review'),
-        arguments: [
-          tx.object(productId),
-          tx.pure.u8(rating),
-          tx.pure.string(comment),
-          tx.object('0x6'),
-        ],
-      });
-
-      return executeTransaction(tx, {
-        rateLimitKey: `review_${account.address}`,
-      });
-    },
-    [account, executeTransaction]
-  );
-
-  return { postReview, ...transactionState };
-}*/
-
-// Create Seller Profile Hook
-export function useCreateSellerProfile() {
-  const { executeTransaction, ...transactionState } = useSecureTransaction();
-  const account = useCurrentAccount();
-
-  const createProfile = useCallback(
-    async (displayName: string, bio: string) => {
-      if (!account) {
-        toast.error('Please connect your wallet');
-        return null;
-      }
-
-      try {
-        ProfileSchema.parse({ displayName, bio });
-      } catch (error) {
-        toast.error('Invalid profile data');
-        return null;
-      }
-
-      const tx = new Transaction();
-
-      tx.moveCall({
-        target: buildTransactionTarget('create_seller_profile'),
-        arguments: [
-          tx.pure.string(displayName),
-          tx.pure.string(bio),
-          tx.object('0x6'),
-        ],
-      });
-
-      return executeTransaction(tx);
-    },
-    [account, executeTransaction]
-  );
-
-  return { createProfile, ...transactionState };
-}
-
-// Follow/Unfollow Seller Hook
-export function useFollowSeller() {
-  const { executeTransaction, ...transactionState } = useSecureTransaction();
-  const account = useCurrentAccount();
-
-  const followSeller = useCallback(
-    async (profileId: string) => {
-      if (!account) {
-        toast.error('Please connect your wallet');
-        return null;
-      }
-
-      const tx = new Transaction();
-      tx.moveCall({
-        target: buildTransactionTarget('follow_seller'),
-        arguments: [tx.object(profileId), tx.object('0x6')],
-      });
-
-      return executeTransaction(tx);
-    },
-    [account, executeTransaction]
-  );
-
-  const unfollowSeller = useCallback(
-    async (profileId: string) => {
-      if (!account) {
-        toast.error('Please connect your wallet');
-        return null;
-      }
-
-      const tx = new Transaction();
-      tx.moveCall({
-        target: buildTransactionTarget('unfollow_seller'),
-        arguments: [tx.object(profileId)],
-      });
-
-      return executeTransaction(tx);
-    },
-    [account, executeTransaction]
-  );
-
-  return { followSeller, unfollowSeller, ...transactionState };
-}
-
-// Fetch Products Hook
-/*export function useFetchProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const client = useSuiClient();
-
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const packageId = OBJECT_TYPES.PRODUCT.split('::')[0];
+      // Build query params
+      const params = new URLSearchParams();
       
-      const events = await client.queryEvents({
-        query: { MoveEventType: `${packageId}::marketplace::ProductListed` },
-        limit: 50,
-      });
+      if (filters?.category) params.append('category', filters.category);
+      if (filters?.minPrice !== undefined) params.append('minPrice', filters.minPrice.toString());
+      if (filters?.maxPrice !== undefined) params.append('maxPrice', filters.maxPrice.toString());
+      if (filters?.search) params.append('search', filters.search);
+      if (filters?.sortBy) params.append('sortBy', filters.sortBy);
+      if (filters?.page) params.append('page', filters.page.toString());
+      if (filters?.limit) params.append('limit', filters.limit.toString());
 
-      const productIds = events.data
-        .map((event: any) => event.parsedJson?.product_id)
-        .filter(Boolean);
+      const response = await fetch(`http://localhost:4000/api/products?${params.toString()}`);
 
-      if (productIds.length === 0) {
-        setProducts([]);
-        return;
-      }
-
-      const objects = await client.multiGetObjects({
-        ids: productIds,
-        options: { showContent: true },
-      });
-
-      const productData: Product[] = objects
-        .filter((obj: any) => obj.data?.content)
-        .map((obj: any) => {
-          const fields = (obj.data!.content as any)?.fields;
-          return {
-            id: obj.data!.objectId,
-            seller: fields.seller,
-            title: fields.title,
-            description: fields.description,
-            price: fields.price,
-            imageUrl: fields.image_url,
-            category: fields.category,
-            isAvailable: fields.is_available,
-            createdAt: fields.created_at,
-            totalSales: fields.total_sales,
-            totalRevenue: fields.total_revenue,
-            ratingSum: fields.rating_sum,
-            ratingCount: fields.rating_count,
-          };
-        });
-
-      setProducts(productData);
-    } catch (err) {
-      const errorMessage = getSafeErrorMessage(err);
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
-
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
-
-  return { products, loading, error, refetch: fetchProducts };
-}*/
-
-// ==================== Fetch Products Hook ====================
-
-// ==================== Fetch Products Hook ====================
-
-export function useFetchProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Query backend API instead of blockchain
-      const response = await fetch('http://localhost:4000/api/products');
-      
       if (!response.ok) {
         throw new Error('Failed to fetch products');
       }
 
       const data = await response.json();
-      
-      // Transform API response to match Product interface
-      const productData: Product[] = data.products.map((p: any) => ({
-        id: p.id,
-        seller: p.seller,
-        title: p.title,
-        description: p.description,
-        price: p.price.toString(),
-        imageUrl: p.image_url,
-        category: p.category,
-        isAvailable: p.is_available,
-        createdAt: p.created_at.toString(),
-        totalSales: p.total_sales?.toString() || '0',
-        totalRevenue: p.total_revenue?.toString() || '0',
-        ratingSum: p.rating_sum?.toString() || '0',
-        ratingCount: p.rating_count?.toString() || '0',
-      }));
-
-      setProducts(productData);
-    } catch (err) {
+      setProducts(data.products || []);
+      setPagination(data.pagination || {
+        page: 1,
+        limit: 20,
+        totalCount: 0,
+        totalPages: 0,
+      });
+    } catch (err: any) {
       const errorMessage = getSafeErrorMessage(err);
       setError(errorMessage);
       console.error('Error fetching products:', errorMessage);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [
+    filters?.category,
+    filters?.minPrice,
+    filters?.maxPrice,
+    filters?.search,
+    filters?.sortBy,
+    filters?.page,
+    filters?.limit,
+  ]);
 
   useEffect(() => {
     fetchProducts();
@@ -458,141 +87,21 @@ export function useFetchProducts() {
     products,
     loading,
     error,
+    pagination,
     refetch: fetchProducts,
   };
 }
 
-// Fetch User Products Hook
-// ==================== Fetch User's Products Hook ====================
-
-export function useUserProducts(userAddress: string | undefined) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchUserProducts = useCallback(async () => {
-    if (!userAddress) {
-      setProducts([]);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Query backend API
-      const response = await fetch(`http://localhost:4000/api/sellers/${userAddress}/products`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch user products');
-      }
-
-      const data = await response.json();
-      
-      const productData: Product[] = data.products.map((p: any) => ({
-        id: p.id,
-        seller: p.seller,
-        title: p.title,
-        description: p.description,
-        price: p.price.toString(),
-        imageUrl: p.image_url,
-        category: p.category,
-        isAvailable: p.is_available,
-        createdAt: p.created_at.toString(),
-        totalSales: p.total_sales?.toString() || '0',
-        totalRevenue: p.total_revenue?.toString() || '0',
-        ratingSum: p.rating_sum?.toString() || '0',
-        ratingCount: p.rating_count?.toString() || '0',
-      }));
-
-      setProducts(productData);
-    } catch (err) {
-      const errorMessage = getSafeErrorMessage(err);
-      setError(errorMessage);
-      console.error('Error fetching user products:', errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [userAddress]);
-
-  useEffect(() => {
-    fetchUserProducts();
-  }, [fetchUserProducts]);
-
-  return {
-    products,
-    loading,
-    error,
-    refetch: fetchUserProducts,
-  };
-}
-
-// ==================== Fetch Products by Category ====================
+// ==================== Fetch Products by Category (Backward Compatibility) ====================
 
 export function useFetchProductsByCategory(category: string | null) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const url = category 
-        ? `http://localhost:4000/api/products?category=${encodeURIComponent(category)}`
-        : 'http://localhost:4000/api/products';
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch products');
-      }
-
-      const data = await response.json();
-      
-      const productData: Product[] = data.products.map((p: any) => ({
-        id: p.id,
-        seller: p.seller,
-        title: p.title,
-        description: p.description,
-        price: p.price.toString(),
-        imageUrl: p.image_url,
-        category: p.category,
-        isAvailable: p.is_available,
-        createdAt: p.created_at.toString(),
-        totalSales: p.total_sales?.toString() || '0',
-        totalRevenue: p.total_revenue?.toString() || '0',
-        ratingSum: p.rating_sum?.toString() || '0',
-        ratingCount: p.rating_count?.toString() || '0',
-      }));
-
-      setProducts(productData);
-    } catch (err) {
-      const errorMessage = getSafeErrorMessage(err);
-      setError(errorMessage);
-      console.error('Error fetching products:', errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [category]);
-
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
-
-  return {
-    products,
-    loading,
-    error,
-    refetch: fetchProducts,
-  };
+  return useFetchProducts({ category });
 }
 
-// ==================== Fetch Single Product ====================
+// ==================== Fetch Single Product Hook ====================
 
 export function useFetchProduct(productId: string | null) {
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -609,29 +118,29 @@ export function useFetchProduct(productId: string | null) {
       const response = await fetch(`http://localhost:4000/api/products/${productId}`);
       
       if (!response.ok) {
-        throw new Error('Product not found');
+        throw new Error('Failed to fetch product');
       }
 
-      const p = await response.json();
+      const data = await response.json();
       
-      const productData: Product = {
-        id: p.id,
-        seller: p.seller,
-        title: p.title,
-        description: p.description,
-        price: p.price.toString(),
-        imageUrl: p.image_url,
-        category: p.category,
-        isAvailable: p.is_available,
-        createdAt: p.created_at.toString(),
-        totalSales: p.total_sales?.toString() || '0',
-        totalRevenue: p.total_revenue?.toString() || '0',
-        ratingSum: p.rating_sum?.toString() || '0',
-        ratingCount: p.rating_count?.toString() || '0',
+      // Map database fields to component expected format
+      const mappedProduct = {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        price: data.price,
+        imageUrl: data.image_url,
+        category: data.category,
+        seller: data.seller,
+        isAvailable: data.is_available,
+        totalSales: data.total_sales,
+        ratingSum: data.rating_sum,
+        ratingCount: data.rating_count,
+        createdAt: data.created_at,
       };
 
-      setProduct(productData);
-    } catch (err) {
+      setProduct(mappedProduct);
+    } catch (err: any) {
       const errorMessage = getSafeErrorMessage(err);
       setError(errorMessage);
       console.error('Error fetching product:', errorMessage);
@@ -652,6 +161,68 @@ export function useFetchProduct(productId: string | null) {
   };
 }
 
+// ==================== Fetch User Products Hook ====================
+
+export function useUserProducts(userAddress: string | undefined) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchUserProducts = useCallback(async () => {
+    if (!userAddress) {
+      setProducts([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/sellers/${userAddress}/products`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch user products');
+      }
+
+      const data = await response.json();
+      
+      // Map database fields to component expected format
+      const mappedProducts = (data.products || []).map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        price: p.price,
+        imageUrl: p.image_url,
+        category: p.category,
+        seller: p.seller,
+        isAvailable: p.is_available,
+        totalSales: p.total_sales,
+        ratingSum: p.rating_sum,
+        ratingCount: p.rating_count,
+        createdAt: p.created_at,
+      }));
+
+      setProducts(mappedProducts);
+    } catch (err: any) {
+      const errorMessage = getSafeErrorMessage(err);
+      setError(errorMessage);
+      console.error('Error fetching user products:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [userAddress]);
+
+  useEffect(() => {
+    fetchUserProducts();
+  }, [fetchUserProducts]);
+
+  return {
+    products,
+    loading,
+    error,
+    refetch: fetchUserProducts,
+  };
+}
 
 // ==================== Post Review Hook ====================
 
@@ -763,16 +334,3 @@ export function useFetchProductReviews(productId: string | null) {
     refetch: fetchReviews,
   };
 }
-
-export default {
-  useSecureTransaction,
-  useListProduct,
-  usePurchaseProduct,
-  usePostReview,
-  useCreateSellerProfile,
-  useFollowSeller,
-  useFetchProducts,
-  useUserProducts,
-  useFetchProductsByCategory,
-  useFetchProduct,
-};

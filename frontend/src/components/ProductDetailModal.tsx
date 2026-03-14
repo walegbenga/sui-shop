@@ -5,6 +5,7 @@ import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { useFetchProduct, useFetchProductReviews, usePostReview } from '@/hooks/useSuiTransactions';
+import { useCart } from '@/contexts/CartContext';
 import toast from 'react-hot-toast';
 
 interface ProductDetailModalProps {
@@ -19,6 +20,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
   const { reviews, refetch: refetchReviews } = useFetchProductReviews(productId);
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const { postReview, loading: reviewLoading } = usePostReview();
+  const { addToCart } = useCart();
 
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [rating, setRating] = useState(5);
@@ -84,6 +86,19 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
       console.error('Error:', error);
       toast.error(`Error: ${error.message}`, { id: 'purchase' });
     }
+  };
+
+  const handleAddToCart = () => {
+    if (!product) return;
+    
+    addToCart({
+      id: product.id,
+      title: product.title,
+      price: product.price,
+      imageUrl: product.imageUrl,
+      seller: product.seller,
+      category: product.category,
+    });
   };
 
   const handleSubmitReview = () => {
@@ -228,7 +243,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                           </div>
 
                           {product.isAvailable ? (
-                            <div className="mt-6">
+                            <div className="mt-6 space-y-3">
                               <button
                                 type="button"
                                 onClick={handlePurchase}
@@ -239,8 +254,18 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                                   ? 'Connect Wallet to Purchase'
                                   : product.seller === account?.address
                                   ? 'This is Your Product'
-                                  : `🛒 Purchase for ${(Number(product.price) / 1e9).toFixed(2)} SUI`}
+                                  : `💳 Buy Now - ${(Number(product.price) / 1e9).toFixed(2)} SUI`}
                               </button>
+
+                              {account && product.seller !== account?.address && (
+                                <button
+                                  type="button"
+                                  onClick={handleAddToCart}
+                                  className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-indigo-600 hover:bg-indigo-50"
+                                >
+                                  🛒 Add to Cart
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="mt-6">
@@ -291,7 +316,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                         {showReviewForm && (
                           <div className="bg-gray-50 rounded-lg p-4 mb-6">
                             <h4 className="font-semibold text-gray-900 mb-3">Write Your Review</h4>
-                            
+
                             {/* Star Rating */}
                             <div className="mb-3">
                               <label className="block text-sm font-medium text-gray-700 mb-1">
