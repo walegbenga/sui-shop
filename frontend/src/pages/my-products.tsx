@@ -1,24 +1,88 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
-import { useUserProducts } from '@/hooks/useSuiTransactions';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
+
+interface Product {
+  id: string;
+  title: string;
+  description: string;
+  price: string;
+  imageUrl: string;
+  category: string;
+  seller: string;
+  isAvailable: boolean;
+  totalSales: string;
+  ratingSum: string;
+  ratingCount: string;
+}
 
 export default function MyProducts() {
   const account = useCurrentAccount();
-  const { products, loading, error, refetch } = useUserProducts(account?.address);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'available' | 'sold'>('all');
 
-  const filteredProducts = products.filter((p) => {
-    if (filter === 'available') return p.isAvailable;
-    if (filter === 'sold') return !p.isAvailable;
-    return true;
-  });
+  useEffect(() => {
+    if (account?.address) {
+      fetchProducts();
+    }
+  }, [account]);
 
-  const stats = {
-    total: products.length,
-    available: products.filter((p) => p.isAvailable).length,
-    sold: products.filter((p) => !p.isAvailable).length,
-    totalRevenue: products.reduce((sum, p) => sum + (p.isAvailable ? 0 : Number(p.price)), 0),
+  const fetchProducts = async () => {
+    if (!account?.address) return;
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/sellers/${account.address}/products`);
+      const data = await response.json();
+      
+      const mappedProducts = (data.products || []).map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        price: p.price,
+        imageUrl: p.image_url,
+        category: p.category,
+        seller: p.seller,
+        isAvailable: p.is_available,
+        totalSales: p.total_sales,
+        ratingSum: p.rating_sum,
+        ratingCount: p.rating_count,
+      }));
+
+      setProducts(mappedProducts);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      toast.error('Failed to fetch products');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (productId: string, productTitle: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${productTitle}"?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${productId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seller: account?.address }),
+      });
+
+      if (response.ok) {
+        toast.success('Product deleted successfully');
+        fetchProducts(); // Refresh the list
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to delete product');
+      }
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
+    }
   };
 
   if (!account) {
@@ -32,114 +96,76 @@ export default function MyProducts() {
     );
   }
 
+  const filteredProducts = products.filter((product) => {
+    if (filter === 'available') return product.isAvailable;
+    if (filter === 'sold') return !product.isAvailable;
+    return true;
+  });
+
   return (
     <div className="max-w-7xl mx-auto py-8 px-4">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">My Products</h1>
-        <Link
-          href="/list-product"
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-500 transition-colors"
-        >
-          + List New Product
-        </Link>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-500">Total Products</p>
-          <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-500">Available</p>
-          <p className="text-3xl font-bold text-green-600">{stats.available}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-500">Sold</p>
-          <p className="text-3xl font-bold text-blue-600">{stats.sold}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-500">Total Revenue</p>
-          <p className="text-3xl font-bold text-indigo-600">
-            {(stats.totalRevenue / 1e9).toFixed(2)} <span className="text-lg">SUI</span>
-          </p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">📦 My Products</h1>
+        <p className="text-gray-500 mt-1">Manage your listed products</p>
       </div>
 
       {/* Filter Tabs */}
-      <div className="bg-white rounded-lg shadow mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6" aria-label="Tabs">
-            {[
-              { name: 'All', value: 'all', count: stats.total },
-              { name: 'Available', value: 'available', count: stats.available },
-              { name: 'Sold', value: 'sold', count: stats.sold },
-            ].map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => setFilter(tab.value as any)}
-                className={`${
-                  filter === tab.value
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium`}
-              >
-                {tab.name}
-                <span
-                  className={`${
-                    filter === tab.value ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-900'
-                  } ml-2 rounded-full py-0.5 px-2.5 text-xs font-medium`}
-                >
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </nav>
-        </div>
+      <div className="mb-6 flex gap-2">
+        <button
+          onClick={() => setFilter('all')}
+          className={`px-4 py-2 rounded-lg font-medium ${
+            filter === 'all'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          All ({products.length})
+        </button>
+        <button
+          onClick={() => setFilter('available')}
+          className={`px-4 py-2 rounded-lg font-medium ${
+            filter === 'available'
+              ? 'bg-green-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          Available ({products.filter((p) => p.isAvailable).length})
+        </button>
+        <button
+          onClick={() => setFilter('sold')}
+          className={`px-4 py-2 rounded-lg font-medium ${
+            filter === 'sold'
+              ? 'bg-red-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          Sold ({products.filter((p) => !p.isAvailable).length})
+        </button>
       </div>
 
       {/* Products List */}
       {loading ? (
         <div className="text-center py-12">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
-          <p className="mt-2 text-gray-600">Loading your products...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-          <p className="text-red-600">{error}</p>
+          <p className="mt-2 text-gray-600">Loading products...</p>
         </div>
       ) : filteredProducts.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-          <svg
-            className="mx-auto h-12 w-12 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-            />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No products found</h3>
+          <h3 className="text-sm font-medium text-gray-900">No products found</h3>
           <p className="mt-1 text-sm text-gray-500">
             {filter === 'all'
               ? "You haven't listed any products yet."
-              : `You have no ${filter} products.`}
+              : `You don't have any ${filter} products.`}
           </p>
-          {filter === 'all' && (
-            <div className="mt-6">
-              <Link
-                href="/list-product"
-                className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500"
-              >
-                + List Your First Product
-              </Link>
-            </div>
-          )}
+          <div className="mt-6">
+            <Link
+              href="/list-product"
+              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500"
+            >
+              + List New Product
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -175,7 +201,7 @@ export default function MyProducts() {
                             {product.category}
                           </span>
                           <span>Sales: {product.totalSales}</span>
-                          {product.ratingCount !== '0' && (
+                          {Number(product.ratingCount) > 0 && (
                             <span>
                               ⭐ {(Number(product.ratingSum) / Number(product.ratingCount)).toFixed(1)}
                             </span>
@@ -183,6 +209,7 @@ export default function MyProducts() {
                         </div>
 
                         <div className="flex items-center space-x-2">
+                          {/* Status Badge */}
                           {product.isAvailable ? (
                             <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-700/10">
                               Available
@@ -191,6 +218,24 @@ export default function MyProducts() {
                             <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
                               Sold Out
                             </span>
+                          )}
+
+                          {/* Action Buttons */}
+                          {product.isAvailable && (
+                            <>
+                              <Link
+                                href={`/edit-product/${product.id}`}
+                                className="text-sm text-indigo-600 hover:text-indigo-500 font-medium"
+                              >
+                                Edit
+                              </Link>
+                              <button
+                                onClick={() => handleDelete(product.id, product.title)}
+                                className="text-sm text-red-600 hover:text-red-500 font-medium"
+                              >
+                                Delete
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>

@@ -17,6 +17,9 @@ interface ProfileStats {
   soldProducts: number;
   totalPurchases: number;
   totalSpent: string;
+  totalFavorites: number;
+  totalFollowing: number;
+  totalFollowers: number;
 }
 
 export default function Profile() {
@@ -62,12 +65,30 @@ export default function Profile() {
       const purchasesData = await purchasesRes.json();
       const purchases = purchasesData.purchases || [];
 
+      // Fetch favorites
+      const favoritesRes = await fetch(`http://localhost:4000/api/users/${account.address}/favorites`);
+      const favoritesData = await favoritesRes.json();
+      const favorites = favoritesData.favorites || [];
+
+      // Fetch following
+      const followingRes = await fetch(`http://localhost:4000/api/users/${account.address}/following`);
+      const followingData = await followingRes.json();
+      const following = followingData.following || [];
+      
+      // Fetch follower
+      const followersRes = await fetch(`http://localhost:4000/api/sellers/${account.address}/followers`);
+      const followersData = await followersRes.json();
+      const followers = followersData.followers || [];
+
       setStats({
         totalProducts: products.length,
         availableProducts: products.filter((p: any) => p.is_available).length,
         soldProducts: products.filter((p: any) => !p.is_available).length,
         totalPurchases: purchases.length,
         totalSpent: purchases.reduce((sum: number, p: any) => sum + Number(p.price), 0).toString(),
+        totalFavorites: favorites.length,
+        totalFollowing: following.length,
+        totalFollowers: followers.length,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -179,6 +200,32 @@ export default function Profile() {
             </div>
           </div>
 
+          {/* Followers Card */}
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-6 text-white">
+              <h3 className="text-sm font-medium opacity-90">Your Followers</h3>
+              <div className="mt-4">
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Total Followers:</span>
+                  <span className="font-semibold">{stats?.totalFollowers || 0}</span>
+                </div>
+              </div>
+            </div>
+
+          {/* Favorites Stats */}
+            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg shadow p-6 text-white">
+              <h3 className="text-sm font-medium opacity-90">Social</h3>
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Favorites:</span>
+                  <span className="font-semibold">{stats?.totalFavorites || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Following:</span>
+                  <span className="font-semibold">{stats?.totalFollowing || 0}</span>
+                </div>
+              </div>
+            </div>
+            
           {/* Account Status */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Account Status</h2>

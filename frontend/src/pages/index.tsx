@@ -6,6 +6,7 @@ import { useFavoriteProduct } from '@/hooks/useSocialFeatures';
 import ProductDetailModal from '@/components/ProductDetailModal';
 import { useFetchProducts } from '@/hooks/useSuiTransactions';
 import { useCart } from '@/contexts/CartContext';
+import Link from 'next/link';
 
 
 function FavoriteButton({ productId }: { productId: string }) {
@@ -334,6 +335,15 @@ export default function Home() {
                         {product.category}
                       </span>
                     </div>
+
+                    {/* Seller Link */}
+                    <Link
+                      href={`/seller/${product.seller}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-2 text-xs text-gray-500 hover:text-indigo-600 block truncate"
+                    >
+                      By: {product.seller.slice(0, 10)}...{product.seller.slice(-8)}
+                    </Link>
 
                     {/* Stats and Action Buttons */}
                     <div className="mt-3 pt-3 border-t border-gray-100">

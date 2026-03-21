@@ -21,10 +21,13 @@ export default function Layout({ children }: LayoutProps) {
   const navigation = [
     { name: 'Marketplace', href: '/', current: router.pathname === '/' },
     { name: 'My Products', href: '/my-products', current: router.pathname === '/my-products' },
+    { name: 'Analytics', href: '/analytics', current: router.pathname === '/analytics' },
     { name: 'My Purchases', href: '/my-purchases', current: router.pathname === '/my-purchases' },
+    { name: 'Favorites', href: '/favorites', current: router.pathname === '/favorites' },
+    { name: 'Following', href: '/following', current: router.pathname === '/following' },
+    { name: 'Followers', href: '/followers', current: router.pathname === '/followers' },
     { name: 'Profile', href: '/profile', current: router.pathname === '/profile' },
   ];
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}

@@ -541,6 +541,238 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
   }
 });
 
+// ==================== Review Endpoints ====================
+
+// Submit a review
+app.post('/api/reviews', async (req, res) => {
+  try {
+    const { productId, buyerAddress, rating, comment } = req.body;
+
+    console.log('Review submission:', { productId, buyerAddress, rating, comment });
+
+    if (!productId || !buyerAddress || !rating) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Check if user has purchased this product
+    const purchaseCheck = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [productId, buyerAddress]
+    );
+
+    if (purchaseCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product before reviewing' });
+    }
+
+    // Check if user already reviewed
+    const reviewCheck = await pool.query(
+      'SELECT * FROM reviews WHERE product_id = $1 AND reviewer = $2',
+      [productId, buyerAddress]
+    );
+
+    if (reviewCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'You have already reviewed this product' });
+    }
+
+    // Insert review
+    await pool.query(
+      `INSERT INTO reviews (product_id, reviewer, rating, comment, created_at)
+       VALUES ($1, $2, $3, $4, EXTRACT(EPOCH FROM NOW())::BIGINT)`,
+      [productId, buyerAddress, rating, comment || '']
+    );
+
+    // Update product rating
+    await pool.query(
+      `UPDATE products 
+       SET rating_sum = rating_sum + $1,
+           rating_count = rating_count + 1
+       WHERE id = $2`,
+      [rating, productId]
+    );
+
+    res.json({ success: true, message: 'Review submitted successfully' });
+  } catch (error) {
+    console.error('Error submitting review:', error);
+    res.status(500).json({ error: 'Failed to submit review' });
+  }
+});
+
+// Get reviews for a product
+/*app.get('/api/products/:id/reviews', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT * FROM reviews 
+       WHERE product_id = $1 
+       ORDER BY created_at DESC`,
+      [id]
+    );
+
+    res.json({ reviews: result.rows });
+  } catch (error) {
+    console.error('Error fetching reviews:', error);
+    res.status(500).json({ error: 'Failed to fetch reviews' });
+  }
+});*/
+
+// ==================== Product Management Endpoints ====================
+
+// Update product (off-chain only - for price, description, image updates)
+app.put('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, price, image_url, category, seller } = req.body;
+
+    // Verify seller owns the product
+    const productCheck = await pool.query(
+      'SELECT seller FROM products WHERE id = $1',
+      [id]
+    );
+
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (productCheck.rows[0].seller !== seller) {
+      return res.status(403).json({ error: 'Not authorized to edit this product' });
+    }
+
+    // Update product
+    await pool.query(
+      `UPDATE products 
+       SET title = $1, description = $2, price = $3, image_url = $4, category = $5, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+       WHERE id = $6`,
+      [title, description, price, image_url, category, id]
+    );
+
+    res.json({ success: true, message: 'Product updated successfully' });
+  } catch (error) {
+    console.error('Error updating product:', error);
+    res.status(500).json({ error: 'Failed to update product' });
+  }
+});
+
+// Delete product (soft delete - mark as unavailable)
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { seller } = req.body;
+
+    // Verify seller owns the product
+    const productCheck = await pool.query(
+      'SELECT seller FROM products WHERE id = $1',
+      [id]
+    );
+
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (productCheck.rows[0].seller !== seller) {
+      return res.status(403).json({ error: 'Not authorized to delete this product' });
+    }
+
+    // Soft delete - mark as unavailable
+    await pool.query(
+      `UPDATE products 
+       SET is_available = false, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+       WHERE id = $1`,
+      [id]
+    );
+
+    res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    res.status(500).json({ error: 'Failed to delete product' });
+  }
+});
+
+// Get seller analytics
+app.get('/api/sellers/:address/analytics', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    // Get product stats
+    const productStats = await pool.query(
+      `SELECT 
+        COUNT(*) as total_products,
+        COUNT(*) FILTER (WHERE is_available = true) as available_products,
+        COUNT(*) FILTER (WHERE is_available = false) as sold_products,
+        AVG(price) as avg_price,
+        SUM(total_sales) as total_sales_count
+       FROM products 
+       WHERE seller = $1`,
+      [address]
+    );
+
+    // Get revenue by time period
+    const revenueByMonth = await pool.query(
+      `SELECT 
+        TO_CHAR(TO_TIMESTAMP(created_at), 'YYYY-MM') as month,
+        COUNT(*) as sales,
+        SUM(price) as revenue
+       FROM purchases 
+       WHERE seller = $1
+       GROUP BY month
+       ORDER BY month DESC
+       LIMIT 12`,
+      [address]
+    );
+
+    // Get top products
+    const topProducts = await pool.query(
+      `SELECT id, title, total_sales, price, rating_sum, rating_count
+       FROM products 
+       WHERE seller = $1
+       ORDER BY total_sales DESC
+       LIMIT 5`,
+      [address]
+    );
+
+    // Get recent sales
+    const recentSales = await pool.query(
+      `SELECT p.id, p.title, p.price, pur.created_at, pur.buyer
+       FROM purchases pur
+       JOIN products p ON pur.product_id = p.id
+       WHERE pur.seller = $1
+       ORDER BY pur.created_at DESC
+       LIMIT 10`,
+      [address]
+    );
+
+    res.json({
+      stats: productStats.rows[0],
+      revenueByMonth: revenueByMonth.rows,
+      topProducts: topProducts.rows,
+      recentSales: recentSales.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// Get followers of a seller (who follows this seller)
+app.get('/api/sellers/:address/followers', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query(
+      `SELECT follower_address, created_at
+       FROM followers
+       WHERE seller_address = $1
+       ORDER BY created_at DESC`,
+      [address]
+    );
+
+    res.json({ followers: result.rows });
+  } catch (error) {
+    console.error('Error fetching followers:', error);
+    res.status(500).json({ error: 'Failed to fetch followers' });
+  }
+});
+
 // ==================== Start Server ====================
 
 app.listen(PORT, () => {

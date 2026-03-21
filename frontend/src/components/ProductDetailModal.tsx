@@ -1,12 +1,18 @@
-import { Fragment, useState } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { XMarkIcon, StarIcon } from '@heroicons/react/24/outline';
-import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
-import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
+import { Fragment, useState, useEffect } from 'react';
+import { Dialog, Transition, Tab } from '@headlessui/react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+// import { useCurrentAccount } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { useFetchProduct, useFetchProductReviews, usePostReview } from '@/hooks/useSuiTransactions';
-import { useCart } from '@/contexts/CartContext';
+import { bcs } from '@mysten/sui/bcs';
 import toast from 'react-hot-toast';
+import { useCart } from '@/contexts/CartContext';
+import { useFollowSeller, useFavoriteProduct } from '@/hooks/useSocialFeatures';
+import { HeartIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
+import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
+
+const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
+const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
 interface ProductDetailModalProps {
   productId: string | null;
@@ -14,42 +20,150 @@ interface ProductDetailModalProps {
   onClose: () => void;
 }
 
-export default function ProductDetailModal({ productId, isOpen, onClose }: ProductDetailModalProps) {
+function classNames(...classes: string[]) {
+  return classes.filter(Boolean).join(' ');
+}
+
+export default function ProductDetailModal({
+  productId,
+  isOpen,
+  onClose,
+}: ProductDetailModalProps) {
   const account = useCurrentAccount();
-  const { product, loading, error, refetch } = useFetchProduct(productId);
-  const { reviews, refetch: refetchReviews } = useFetchProductReviews(productId);
-  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
-  const { postReview, loading: reviewLoading } = usePostReview();
   const { addToCart } = useCart();
+  const [product, setProduct] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  const [reviewText, setReviewText] = useState('');
+  const [rating, setRating] = useState(0);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [hasPurchased, setHasPurchased] = useState(false);
 
-  const [showReviewForm, setShowReviewForm] = useState(false);
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
-  const [activeTab, setActiveTab] = useState<'details' | 'reviews'>('details');
+  const client = useSuiClient();
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
-  const handlePurchase = async () => {
+  const { isFavorited, loading: favoriteLoading, toggleFavorite } = useFavoriteProduct(
+    productId,
+    account?.address
+  );
+  const { isFollowing, loading: followLoading, toggleFollow } = useFollowSeller(
+    product?.seller,
+    account?.address
+  );
+
+  useEffect(() => {
+    if (isOpen && productId) {
+      fetchProduct();
+      fetchReviews();
+      checkPurchaseStatus();
+    }
+  }, [isOpen, productId, account]);
+
+  const fetchProduct = async () => {
+    if (!productId) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${productId}`);
+      const data = await response.json();
+      setProduct(data);
+    } catch (error) {
+      console.error('Error fetching product:', error);
+      toast.error('Failed to load product');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchReviews = async () => {
+    if (!productId) return;
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${productId}/reviews`);
+      const data = await response.json();
+      setReviews(data.reviews || []);
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+    }
+  };
+
+  const checkPurchaseStatus = async () => {
+    if (!productId || !account?.address) return;
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
+      const data = await response.json();
+      const purchased = data.purchases?.some((p: any) => p.product_id === productId);
+      setHasPurchased(purchased);
+    } catch (error) {
+      console.error('Error checking purchase:', error);
+    }
+  };
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
     if (!account) {
-      toast.error('Please connect your wallet first');
+      toast.error('Please connect your wallet');
       return;
     }
 
-    if (!product) {
-      toast.error('Product not found');
+    if (!rating) {
+      toast.error('Please select a rating');
       return;
     }
 
-    if (product.seller === account.address) {
-      toast.error("You can't buy your own product");
+    if (!hasPurchased) {
+      toast.error('You must purchase this product before reviewing');
       return;
     }
 
     try {
-      const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
-      const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
+      const response = await fetch('http://localhost:4000/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: productId,
+          buyerAddress: account.address,
+          rating: rating,
+          comment: reviewText,
+        }),
+      });
 
+      if (response.ok) {
+        toast.success('Review submitted! ⭐');
+        setReviewText('');
+        setRating(0);
+        fetchReviews();
+        fetchProduct();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to submit review');
+      }
+    } catch (error: any) {
+      console.error('Error submitting review:', error);
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  const handlePurchase = async () => {
+    if (!account || !product) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    if (product.seller === account.address) {
+      toast.error('You cannot buy your own product');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
       const tx = new Transaction();
-
-      const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(product.price)]);
+      const priceWithFee = Math.floor(Number(product.price) * 1.02);
+      
+      const [coin] = tx.splitCoins(tx.gas, [priceWithFee]);
 
       tx.moveCall({
         target: `${PACKAGE_ID}::marketplace::purchase_product`,
@@ -61,62 +175,78 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
         ],
       });
 
-      toast.loading('Processing purchase...', { id: 'purchase' });
-
-      signAndExecute(
+      signAndExecuteTransaction(
         {
           transaction: tx,
         },
         {
           onSuccess: (result) => {
             console.log('Purchase successful:', result);
-            toast.success('Purchase successful! 🎉', { id: 'purchase' });
-            refetch();
+            toast.success('Purchase successful! 🎉');
+            onClose();
             setTimeout(() => {
-              onClose();
-            }, 1500);
+              fetchProduct();
+            }, 2000);
           },
           onError: (error) => {
             console.error('Purchase failed:', error);
-            toast.error(`Purchase failed: ${error.message}`, { id: 'purchase' });
+            toast.error(`Purchase failed: ${error.message}`);
+            setLoading(false);
           },
         }
       );
     } catch (error: any) {
-      console.error('Error:', error);
-      toast.error(`Error: ${error.message}`, { id: 'purchase' });
+      console.error('Purchase error:', error);
+      toast.error(`Purchase failed: ${error.message}`);
+      setLoading(false);
     }
   };
 
   const handleAddToCart = () => {
     if (!product) return;
-    
     addToCart({
       id: product.id,
       title: product.title,
       price: product.price,
-      imageUrl: product.imageUrl,
-      seller: product.seller,
+      imageUrl: product.image_url,
       category: product.category,
+      seller: product.seller,
     });
+    toast.success('Added to cart! 🛒');
   };
 
-  const handleSubmitReview = () => {
-    if (!product) return;
+  if (!product && loading) {
+    return (
+      <Transition.Root show={isOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={onClose}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          </Transition.Child>
 
-    if (comment.trim().length < 10) {
-      toast.error('Review must be at least 10 characters');
-      return;
-    }
+          <div className="fixed inset-0 z-10 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-center shadow-xl transition-all sm:w-full sm:max-w-lg sm:p-6">
+                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
+                <p className="mt-2 text-gray-600">Loading product...</p>
+              </Dialog.Panel>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
+    );
+  }
 
-    postReview(product.id, rating, comment, () => {
-      setComment('');
-      setRating(5);
-      setShowReviewForm(false);
-      refetchReviews();
-      refetch();
-    });
-  };
+  if (!product) return null;
+
+  const tabs = ['Details', 'Reviews'];
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -134,7 +264,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
         </Transition.Child>
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div className="flex min-h-full items-center justify-center p-4 sm:p-0">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
@@ -144,7 +274,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl sm:p-6">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl">
                 <div className="absolute right-0 top-0 pr-4 pt-4">
                   <button
                     type="button"
@@ -156,266 +286,286 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                   </button>
                 </div>
 
-                {loading && (
-                  <div className="text-center py-8">
-                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
-                    <p className="mt-2 text-gray-500">Loading...</p>
+                <div className="sm:flex sm:items-start">
+                  {/* Product Image */}
+                  <div className="sm:w-1/2">
+                    <img
+                      src={product.image_url}
+                      alt={product.title}
+                      className="h-96 w-full object-cover"
+                    />
                   </div>
-                )}
 
-                {error && (
-                  <div className="text-center py-8">
-                    <p className="text-red-600">{error}</p>
-                  </div>
-                )}
+                  {/* Product Info */}
+                  <div className="sm:w-1/2 p-6">
+                    <div className="mb-4">
+                      <Dialog.Title
+                        as="h3"
+                        className="text-2xl font-bold leading-6 text-gray-900"
+                      >
+                        {product.title}
+                      </Dialog.Title>
+                      
+                      {/* Category Badge */}
+                      <div className="mt-2">
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                          {product.category}
+                        </span>
+                      </div>
 
-                {product && !loading && (
-                  <div className="mt-3">
-                    {/* Tabs */}
-                    <div className="border-b border-gray-200 mb-6">
-                      <nav className="-mb-px flex space-x-8">
-                        <button
-                          onClick={() => setActiveTab('details')}
-                          className={`${
-                            activeTab === 'details'
-                              ? 'border-indigo-500 text-indigo-600'
-                              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                          } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium`}
-                        >
-                          Product Details
-                        </button>
-                        <button
-                          onClick={() => setActiveTab('reviews')}
-                          className={`${
-                            activeTab === 'reviews'
-                              ? 'border-indigo-500 text-indigo-600'
-                              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                          } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium`}
-                        >
-                          Reviews ({reviews.length})
-                        </button>
-                      </nav>
-                    </div>
+                      {/* Price */}
+                      <div className="mt-4">
+                        <span className="text-3xl font-bold text-indigo-600">
+                          {(Number(product.price) / 1e9).toFixed(2)}
+                        </span>
+                        <span className="text-lg text-gray-500 ml-2">SUI</span>
+                      </div>
 
-                    {/* Product Details Tab */}
-                    {activeTab === 'details' && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <img
-                            src={product.imageUrl}
-                            alt={product.title}
-                            className="w-full h-64 object-cover rounded-lg"
-                          />
-                        </div>
-
-                        <div>
-                          <Dialog.Title as="h3" className="text-2xl font-semibold text-gray-900">
-                            {product.title}
-                          </Dialog.Title>
-
-                          <div className="mt-2 flex items-center space-x-2">
-                            <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                              {product.category}
-                            </span>
-                            {!product.isAvailable && (
-                              <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
-                                SOLD OUT
-                              </span>
+                      {/* Rating */}
+                      {Number(product.rating_count) > 0 && (
+                        <div className="mt-2 flex items-center">
+                          <span className="text-yellow-500">
+                            {'⭐'.repeat(
+                              Math.round(Number(product.rating_sum) / Number(product.rating_count))
                             )}
-                          </div>
+                          </span>
+                          <span className="ml-2 text-sm text-gray-600">
+                            ({product.rating_count} reviews)
+                          </span>
+                        </div>
+                      )}
 
-                          <div className="mt-4">
-                            <p className="text-3xl font-bold text-gray-900">
-                              {(Number(product.price) / 1e9).toFixed(2)} SUI
-                            </p>
-                          </div>
-
-                          <div className="mt-4">
-                            <h4 className="text-sm font-medium text-gray-900">Description</h4>
-                            <p className="mt-2 text-sm text-gray-600">{product.description}</p>
-                          </div>
-
-                          <div className="mt-4">
+                      {/* Seller Info */}
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
                             <h4 className="text-sm font-medium text-gray-900">Seller</h4>
                             <p className="mt-1 text-xs text-gray-500 font-mono break-all">
                               {product.seller}
                             </p>
                           </div>
-
-                          {product.isAvailable ? (
-                            <div className="mt-6 space-y-3">
-                              <button
-                                type="button"
-                                onClick={handlePurchase}
-                                disabled={!account || product.seller === account?.address}
-                                className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                              >
-                                {!account
-                                  ? 'Connect Wallet to Purchase'
-                                  : product.seller === account?.address
-                                  ? 'This is Your Product'
-                                  : `💳 Buy Now - ${(Number(product.price) / 1e9).toFixed(2)} SUI`}
-                              </button>
-
-                              {account && product.seller !== account?.address && (
-                                <button
-                                  type="button"
-                                  onClick={handleAddToCart}
-                                  className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-indigo-600 hover:bg-indigo-50"
-                                >
-                                  🛒 Add to Cart
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="mt-6">
-                              <button
-                                type="button"
-                                disabled
-                                className="w-full rounded-md bg-gray-300 px-3 py-2 text-sm font-semibold text-gray-500 cursor-not-allowed"
-                              >
-                                Sold Out
-                              </button>
-                            </div>
+                          
+                          {account && account.address !== product.seller && (
+                            <button
+                              onClick={toggleFollow}
+                              disabled={followLoading}
+                              className={`ml-2 px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                                isFollowing
+                                  ? 'bg-gray-200 text-gray-700'
+                                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                              }`}
+                            >
+                              {isFollowing ? 'Following' : '+ Follow'}
+                            </button>
                           )}
-
-                          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <p className="text-gray-500">Total Sales</p>
-                              <p className="font-semibold">{product.totalSales}</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-500">Rating</p>
-                              <p className="font-semibold">
-                                {product.ratingCount !== '0'
-                                  ? `${(Number(product.ratingSum) / Number(product.ratingCount)).toFixed(1)} ⭐`
-                                  : 'No ratings'}
-                              </p>
-                            </div>
-                          </div>
                         </div>
                       </div>
-                    )}
+                    </div>
 
-                    {/* Reviews Tab */}
-                    {activeTab === 'reviews' && (
-                      <div>
-                        {/* Post Review Button */}
-                        {account && !showReviewForm && (
-                          <div className="mb-6">
-                            <button
-                              onClick={() => setShowReviewForm(true)}
-                              className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-500"
-                            >
-                              Write a Review
-                            </button>
+                    {/* Tabs */}
+                    <Tab.Group selectedIndex={activeTab} onChange={setActiveTab}>
+                      <Tab.List className="flex space-x-1 rounded-xl bg-gray-100 p-1">
+                        {tabs.map((tab) => (
+                          <Tab
+                            key={tab}
+                            className={({ selected }) =>
+                              classNames(
+                                'w-full rounded-lg py-2.5 text-sm font-medium leading-5',
+                                'ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2',
+                                selected
+                                  ? 'bg-white text-indigo-700 shadow'
+                                  : 'text-gray-700 hover:bg-white/[0.12] hover:text-indigo-600'
+                              )
+                            }
+                          >
+                            {tab}
+                          </Tab>
+                        ))}
+                      </Tab.List>
+                      <Tab.Panels className="mt-4 max-h-64 overflow-y-auto">
+                        {/* Details Tab */}
+                        <Tab.Panel className="rounded-xl bg-white p-3">
+                          <p className="text-sm text-gray-700">{product.description}</p>
+                          <div className="mt-4 space-y-2 text-sm text-gray-600">
+                            <p>
+                              <strong>Sales:</strong> {product.total_sales}
+                            </p>
+                            <p>
+                              <strong>Status:</strong>{' '}
+                              {product.is_available ? (
+                                <span className="text-green-600 font-semibold">Available</span>
+                              ) : (
+                                <span className="text-red-600 font-semibold">Sold Out</span>
+                              )}
+                            </p>
                           </div>
-                        )}
+                        </Tab.Panel>
 
-                        {/* Review Form */}
-                        {showReviewForm && (
-                          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                            <h4 className="font-semibold text-gray-900 mb-3">Write Your Review</h4>
-
-                            {/* Star Rating */}
-                            <div className="mb-3">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Rating
-                              </label>
-                              <div className="flex space-x-1">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <button
-                                    key={star}
-                                    onClick={() => setRating(star)}
-                                    className="focus:outline-none"
-                                  >
-                                    {star <= rating ? (
-                                      <StarIconSolid className="h-8 w-8 text-yellow-400" />
-                                    ) : (
-                                      <StarIcon className="h-8 w-8 text-gray-300" />
-                                    )}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Comment */}
-                            <div className="mb-3">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Comment
-                              </label>
-                              <textarea
-                                value={comment}
-                                onChange={(e) => setComment(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                                placeholder="Share your experience..."
-                              />
-                            </div>
-
-                            {/* Buttons */}
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={handleSubmitReview}
-                                disabled={reviewLoading}
-                                className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-indigo-500 disabled:bg-gray-400"
-                              >
-                                {reviewLoading ? 'Posting...' : 'Post Review'}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setShowReviewForm(false);
-                                  setComment('');
-                                  setRating(5);
-                                }}
-                                className="bg-gray-200 text-gray-700 px-4 py-2 rounded text-sm font-semibold hover:bg-gray-300"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Reviews List */}
-                        {reviews.length === 0 ? (
-                          <div className="text-center py-8 text-gray-500">
-                            <p>No reviews yet. Be the first to review!</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            {reviews.map((review) => (
-                              <div key={review.product_id + review.reviewer} className="bg-gray-50 rounded-lg p-4">
-                                <div className="flex items-start justify-between">
-                                  <div className="flex-1">
-                                    <div className="flex items-center space-x-2">
-                                      <div className="flex">
-                                        {[...Array(5)].map((_, i) => (
-                                          <StarIconSolid
-                                            key={i}
-                                            className={`h-4 w-4 ${
-                                              i < review.rating ? 'text-yellow-400' : 'text-gray-300'
-                                            }`}
-                                          />
-                                        ))}
-                                      </div>
-                                      <span className="text-sm font-semibold text-gray-900">
-                                        {review.rating}/5
-                                      </span>
-                                    </div>
-                                    <p className="mt-2 text-sm text-gray-700">{review.comment}</p>
-                                    <p className="mt-2 text-xs text-gray-500 font-mono">
-                                      By: {review.reviewer.slice(0, 10)}...{review.reviewer.slice(-8)}
-                                    </p>
+                        {/* Reviews Tab */}
+                        <Tab.Panel className="rounded-xl bg-white p-3">
+                          <div className="space-y-6">
+                            {/* Review Form - Only show if user has purchased */}
+                            {account && hasPurchased && (
+                              <form onSubmit={handleReviewSubmit} className="bg-gray-50 rounded-lg p-4">
+                                <h4 className="font-semibold text-gray-900 mb-3">Write a Review</h4>
+                                
+                                {/* Star Rating */}
+                                <div className="mb-3">
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Your Rating *
+                                  </label>
+                                  <div className="flex gap-2">
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                      <button
+                                        key={star}
+                                        type="button"
+                                        onClick={() => setRating(star)}
+                                        className="text-2xl focus:outline-none"
+                                      >
+                                        {star <= rating ? '⭐' : '☆'}
+                                      </button>
+                                    ))}
                                   </div>
                                 </div>
+
+                                {/* Review Text */}
+                                <div className="mb-3">
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Your Review (Optional)
+                                  </label>
+                                  <textarea
+                                    value={reviewText}
+                                    onChange={(e) => setReviewText(e.target.value)}
+                                    rows={3}
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                                    placeholder="Share your experience with this product..."
+                                  />
+                                </div>
+
+                                <button
+                                  type="submit"
+                                  className="w-full bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-500"
+                                >
+                                  Submit Review
+                                </button>
+                              </form>
+                            )}
+
+                            {/* Message if not purchased */}
+                            {account && !hasPurchased && (
+                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                                <p className="text-sm text-yellow-800">
+                                  You must purchase this product before leaving a review.
+                                </p>
                               </div>
-                            ))}
+                            )}
+
+                            {/* Existing Reviews */}
+                            <div>
+                              <h4 className="font-semibold text-gray-900 mb-3">
+                                Customer Reviews ({reviews.length})
+                              </h4>
+                              
+                              {reviews.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">
+                                  No reviews yet. Be the first to review!
+                                </p>
+                              ) : (
+                                <div className="space-y-4">
+                                  {reviews.map((review) => (
+                                    <div
+                                      key={`${review.product_id}-${review.reviewer}-${review.created_at}`}
+                                      className="border-b border-gray-200 pb-4 last:border-b-0"
+                                    >
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className="text-yellow-500">
+                                            {'⭐'.repeat(review.rating)}
+                                          </div>
+                                          <span className="text-sm text-gray-600 font-mono">
+                                            {review.reviewer.slice(0, 6)}...{review.reviewer.slice(-4)}
+                                          </span>
+                                        </div>
+                                        <span className="text-xs text-gray-500">
+                                          {new Date(Number(review.created_at) * 1000).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                      {review.comment && (
+                                        <p className="text-sm text-gray-700">{review.comment}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    )}
+                        </Tab.Panel>
+                      </Tab.Panels>
+                    </Tab.Group>
+
+                    {/* Action Buttons */}
+                    <div className="mt-6">
+                      {product.is_available ? (
+                        <div className="space-y-3">
+                          {/* Favorite Button */}
+                          {account && (
+                            <button
+                              type="button"
+                              onClick={toggleFavorite}
+                              disabled={favoriteLoading}
+                              className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center justify-center gap-2"
+                            >
+                              {isFavorited ? (
+                                <>
+                                  <HeartIconSolid className="h-5 w-5 text-red-500" />
+                                  Remove from Favorites
+                                </>
+                              ) : (
+                                <>
+                                  <HeartIcon className="h-5 w-5" />
+                                  Add to Favorites
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {/* Purchase Button */}
+                          <button
+                            type="button"
+                            onClick={handlePurchase}
+                            disabled={!account || product.seller === account?.address || loading}
+                            className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          >
+                            {!account
+                              ? 'Connect Wallet to Purchase'
+                              : product.seller === account?.address
+                              ? 'This is Your Product'
+                              : loading
+                              ? 'Processing...'
+                              : `💳 Buy Now - ${(Number(product.price) / 1e9).toFixed(2)} SUI`}
+                          </button>
+
+                          {/* Add to Cart Button */}
+                          {account && product.seller !== account?.address && (
+                            <button
+                              type="button"
+                              onClick={handleAddToCart}
+                              className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-indigo-600 hover:bg-indigo-50"
+                            >
+                              🛒 Add to Cart
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-md bg-red-50 p-4">
+                          <p className="text-sm text-red-800 text-center font-semibold">
+                            This product is no longer available
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
+                </div>
               </Dialog.Panel>
             </Transition.Child>
           </div>
