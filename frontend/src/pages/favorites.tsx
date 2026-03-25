@@ -2,14 +2,32 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useUserFavorites } from '@/hooks/useSocialFeatures';
 import { HeartIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ProductDetailModal from '@/components/ProductDetailModal';
+import EmptyState from '@/components/EmptyState';
+import { useRouter } from 'next/router';
 
 export default function Favorites() {
   const account = useCurrentAccount();
-  const { favorites, loading } = useUserFavorites(account?.address);
+  const router = useRouter();
+  const { favorites, loading, refetch } = useUserFavorites(account?.address);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // ✅ ADDED: Listen for favorites changes and refetch
+  useEffect(() => {
+    const handleFavoritesChanged = () => {
+      if (refetch) {
+        refetch();
+      }
+    };
+
+    window.addEventListener('favoritesChanged', handleFavoritesChanged);
+
+    return () => {
+      window.removeEventListener('favoritesChanged', handleFavoritesChanged);
+    };
+  }, [refetch]);
 
   if (!account) {
     return (
@@ -35,21 +53,15 @@ export default function Favorites() {
           <p className="mt-2 text-gray-600">Loading favorites...</p>
         </div>
       ) : favorites.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-          <HeartIcon className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No favorites yet</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Start adding products to your favorites by clicking the heart icon!
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500"
-            >
-              Browse Products
-            </Link>
-          </div>
-        </div>
+        <EmptyState
+          icon={<HeartIcon className="h-12 w-12 text-gray-400" />}
+          title="No favorites yet"
+          description="Start adding products to your favorites by clicking the heart icon!"
+          action={{
+            label: 'Browse Products',
+            onClick: () => router.push('/'),
+          }}
+        />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {favorites.map((fav) => (
@@ -66,6 +78,7 @@ export default function Favorites() {
                   src={fav.image_url}
                   alt={fav.title}
                   className="w-full h-48 object-cover rounded-t-lg"
+                  loading="lazy"
                 />
                 {!fav.is_available && (
                   <div className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">

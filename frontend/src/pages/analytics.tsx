@@ -6,6 +6,7 @@ import {
   ShoppingBagIcon,
   ArrowTrendingUpIcon 
 } from '@heroicons/react/24/outline';
+import StatsCardSkeleton from '@/components/skeletons/StatsCardSkeleton';
 
 interface AnalyticsData {
   stats: {
@@ -77,9 +78,23 @@ export default function Analytics() {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto py-12 px-4 text-center">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
-        <p className="mt-2 text-gray-600">Loading analytics...</p>
+      <div className="max-w-7xl mx-auto py-8 px-4">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">📊 Sales Analytics</h1>
+          <p className="text-gray-500 mt-1">Track your performance and insights</p>
+        </div>
+
+        {/* Stats Grid Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <StatsCardSkeleton key={i} />
+          ))}
+        </div>
+
+        {/* Chart Skeleton */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="h-64 bg-gray-200 rounded animate-pulse"></div>
+        </div>
       </div>
     );
   }

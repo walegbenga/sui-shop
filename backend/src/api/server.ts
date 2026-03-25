@@ -131,20 +131,33 @@ app.get('/api/products', async (req, res) => {
 });
 
 // Get single product by ID
-app.get('/api/products/:id', async (req, res) => {
+app.put('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const { title, description, price, image_url, category, seller, quantity, resellable } = req.body;
 
-    const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-
-    if (result.rows.length === 0) {
+    // Verify ownership
+    const product = await pool.query('SELECT seller FROM products WHERE id = $1', [id]);
+    if (product.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
+    if (product.rows[0].seller !== seller) {
+      return res.status(403).json({ error: 'Not authorized to edit this product' });
+    }
 
-    res.json(result.rows[0]);
+    // Update product
+    await pool.query(
+      `UPDATE products 
+       SET title = $1, description = $2, price = $3, image_url = $4, category = $5, 
+           quantity = $6, resellable = $7, available_quantity = $6
+       WHERE id = $8`,
+      [title, description, price, image_url, category, quantity, resellable, id]
+    );
+
+    res.json({ message: 'Product updated successfully' });
   } catch (error) {
-    console.error('Error fetching product:', error);
-    res.status(500).json({ error: 'Failed to fetch product' });
+    console.error('Error updating product:', error);
+    res.status(500).json({ error: 'Failed to update product' });
   }
 });
 

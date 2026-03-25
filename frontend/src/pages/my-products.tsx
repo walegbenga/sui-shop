@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import ListItemSkeleton from '@/components/skeletons/ListItemSkeleton';
 
 interface Product {
   id: string;
@@ -15,6 +16,9 @@ interface Product {
   totalSales: string;
   ratingSum: string;
   ratingCount: string;
+  quantity?: number;              // ✅ ADDED
+  available_quantity?: number;    // ✅ ADDED
+  resellable?: boolean;
 }
 
 export default function MyProducts() {
@@ -75,7 +79,7 @@ export default function MyProducts() {
 
       if (response.ok) {
         toast.success('Product deleted successfully');
-        fetchProducts(); // Refresh the list
+        fetchProducts();
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to delete product');
@@ -114,7 +118,7 @@ export default function MyProducts() {
       <div className="mb-6 flex gap-2">
         <button
           onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded-lg font-medium ${
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             filter === 'all'
               ? 'bg-indigo-600 text-white'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -124,7 +128,7 @@ export default function MyProducts() {
         </button>
         <button
           onClick={() => setFilter('available')}
-          className={`px-4 py-2 rounded-lg font-medium ${
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             filter === 'available'
               ? 'bg-green-600 text-white'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -134,7 +138,7 @@ export default function MyProducts() {
         </button>
         <button
           onClick={() => setFilter('sold')}
-          className={`px-4 py-2 rounded-lg font-medium ${
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             filter === 'sold'
               ? 'bg-red-600 text-white'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -146,9 +150,12 @@ export default function MyProducts() {
 
       {/* Products List */}
       {loading ? (
-        <div className="text-center py-12">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
-          <p className="mt-2 text-gray-600">Loading products...</p>
+        <div className="bg-white shadow overflow-hidden sm:rounded-md">
+          <ul className="divide-y divide-gray-200">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <ListItemSkeleton key={i} />
+            ))}
+          </ul>
         </div>
       ) : filteredProducts.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
@@ -172,13 +179,14 @@ export default function MyProducts() {
           <ul className="divide-y divide-gray-200">
             {filteredProducts.map((product) => (
               <li key={product.id}>
-                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center">
                     {/* Product Image */}
                     <img
                       src={product.imageUrl}
                       alt={product.title}
                       className="h-20 w-20 rounded-lg object-cover"
+                      loading="lazy"
                     />
 
                     {/* Product Info */}
@@ -225,13 +233,13 @@ export default function MyProducts() {
                             <>
                               <Link
                                 href={`/edit-product/${product.id}`}
-                                className="text-sm text-indigo-600 hover:text-indigo-500 font-medium"
+                                className="text-sm text-indigo-600 hover:text-indigo-500 font-medium transition-colors"
                               >
                                 Edit
                               </Link>
                               <button
                                 onClick={() => handleDelete(product.id, product.title)}
-                                className="text-sm text-red-600 hover:text-red-500 font-medium"
+                                className="text-sm text-red-600 hover:text-red-500 font-medium transition-colors"
                               >
                                 Delete
                               </button>

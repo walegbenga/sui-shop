@@ -92,12 +92,15 @@ async function processEvents() {
             console.log(`   Image URL: ${imageUrl}`);
             console.log(`   Category: ${category}`);
 
-            // Insert or update product in database
+            // ✅ UPDATED: Insert product with quantity and resellable fields
+            // Default values: quantity=1, available_quantity=1, resellable=false
             await pool.query(
               `INSERT INTO products (
                 id, seller, title, description, price, image_url, category, 
-                is_available, total_sales, rating_sum, rating_count, created_at, updated_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                is_available, total_sales, rating_sum, rating_count, 
+                quantity, available_quantity, resellable,
+                created_at, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
               ON CONFLICT (id) 
               DO UPDATE SET 
                 title = EXCLUDED.title,
@@ -114,10 +117,13 @@ async function processEvents() {
                 price,
                 imageUrl,
                 category,
-                true, // is_available
-                0,    // total_sales
-                0,    // rating_sum
-                0,    // rating_count
+                true,  // is_available
+                0,     // total_sales
+                0,     // rating_sum
+                0,     // rating_count
+                1,     // quantity (default to 1 for blockchain products)
+                1,     // available_quantity (default to 1)
+                false, // resellable (default to false)
                 timestamp, // created_at from blockchain
                 timestamp, // updated_at from blockchain
               ]
@@ -138,54 +144,61 @@ async function processEvents() {
         }
       }
 
-      // Handle ProductPurchased event
-else if (eventType === 'ProductPurchased') {
-  const productId = (parsedJson as any).product_id;
-  const buyer = (parsedJson as any).buyer;
-  const seller = (parsedJson as any).seller;
-  const price = (parsedJson as any).price;
-  const platformFee = (parsedJson as any).platform_fee;
-  const timestamp = (parsedJson as any).timestamp;
+      // ✅ UPDATED: Handle ProductPurchased event with quantity tracking
+      else if (eventType === 'ProductPurchased') {
+        const productId = (parsedJson as any).product_id;
+        const buyer = (parsedJson as any).buyer;
+        const seller = (parsedJson as any).seller;
+        const price = (parsedJson as any).price;
+        const platformFee = (parsedJson as any).platform_fee;
+        const timestamp = (parsedJson as any).timestamp;
 
-  // Generate purchase ID from transaction digest and event sequence
-  const purchaseId = `${event.id.txDigest}-${event.id.eventSeq}`;
+        // Generate purchase ID from transaction digest and event sequence
+        const purchaseId = `${event.id.txDigest}-${event.id.eventSeq}`;
 
-  console.log(`💰 Product Purchased: ${productId}`);
-  console.log(`   Purchase ID: ${purchaseId}`);
-  console.log(`   Buyer: ${buyer}`);
-  console.log(`   Seller: ${seller}`);
-  console.log(`   Price: ${price} MIST`);
+        console.log(`💰 Product Purchased: ${productId}`);
+        console.log(`   Purchase ID: ${purchaseId}`);
+        console.log(`   Buyer: ${buyer}`);
+        console.log(`   Seller: ${seller}`);
+        console.log(`   Price: ${price} MIST`);
 
-  // Update product availability and sales count
-  await pool.query(
-    `UPDATE products 
-     SET is_available = FALSE, 
-         total_sales = total_sales + 1,
-         updated_at = $1
-     WHERE id = $2`,
-    [timestamp, productId]
-  );
+        // ✅ UPDATED: Decrement available_quantity instead of just setting is_available
+        // Only mark as unavailable if quantity reaches 0
+        await pool.query(
+          `UPDATE products 
+           SET available_quantity = GREATEST(available_quantity - 1, 0),
+               is_available = CASE 
+                 WHEN available_quantity - 1 <= 0 THEN FALSE 
+                 ELSE TRUE 
+               END,
+               total_sales = total_sales + 1,
+               updated_at = $1
+           WHERE id = $2`,
+          [timestamp, productId]
+        );
 
-  // Record purchase
-  await pool.query(
-    `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (id) DO NOTHING`,
-    [purchaseId, productId, buyer, seller, price, platformFee, event.id.txDigest, timestamp]
-  );
+        console.log(`✅ Product quantity decremented`);
 
-  // Update seller stats
-  await pool.query(
-    `UPDATE sellers 
-     SET total_sales = total_sales + 1,
-         total_revenue = total_revenue + $1,
-         updated_at = NOW()
-     WHERE address = $2`,
-    [price, seller]
-  );
+        // Record purchase
+        await pool.query(
+          `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (id) DO NOTHING`,
+          [purchaseId, productId, buyer, seller, price, platformFee, event.id.txDigest, timestamp]
+        );
 
-  console.log(`✅ Purchase recorded`);
-}
+        // Update seller stats
+        await pool.query(
+          `UPDATE sellers 
+           SET total_sales = total_sales + 1,
+               total_revenue = total_revenue + $1,
+               updated_at = NOW()
+           WHERE address = $2`,
+          [price, seller]
+        );
+
+        console.log(`✅ Purchase recorded`);
+      }
 
       // Handle ReviewPosted event
       else if (eventType === 'ReviewPosted') {

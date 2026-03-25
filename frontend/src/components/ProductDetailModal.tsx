@@ -1,15 +1,14 @@
 import { Fragment, useState, useEffect } from 'react';
 import { Dialog, Transition, Tab } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-// import { useCurrentAccount } from '@mysten/dapp-kit';
+import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
 import toast from 'react-hot-toast';
 import { useCart } from '@/contexts/CartContext';
 import { useFollowSeller, useFavoriteProduct } from '@/hooks/useSocialFeatures';
-import { HeartIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { HeartIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
-import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
@@ -31,6 +30,8 @@ export default function ProductDetailModal({
 }: ProductDetailModalProps) {
   const account = useCurrentAccount();
   const { addToCart } = useCart();
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
@@ -38,9 +39,6 @@ export default function ProductDetailModal({
   const [rating, setRating] = useState(0);
   const [reviews, setReviews] = useState<any[]>([]);
   const [hasPurchased, setHasPurchased] = useState(false);
-
-  const client = useSuiClient();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
   const { isFavorited, loading: favoriteLoading, toggleFavorite } = useFavoriteProduct(
     productId,
@@ -274,11 +272,11 @@ export default function ProductDetailModal({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl">
-                <div className="absolute right-0 top-0 pr-4 pt-4">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+                <div className="absolute right-2 top-2 sm:right-4 sm:top-4 z-10">
                   <button
                     type="button"
-                    className="rounded-md bg-white text-gray-400 hover:text-gray-500"
+                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 p-2 shadow-lg"
                     onClick={onClose}
                   >
                     <span className="sr-only">Close</span>
@@ -286,18 +284,18 @@ export default function ProductDetailModal({
                   </button>
                 </div>
 
-                <div className="sm:flex sm:items-start">
+                <div className="flex flex-col sm:flex-row">
                   {/* Product Image */}
-                  <div className="sm:w-1/2">
+                  <div className="w-full sm:w-1/2">
                     <img
                       src={product.image_url}
                       alt={product.title}
-                      className="h-96 w-full object-cover"
+                      className="w-full h-64 sm:h-96 object-cover"
                     />
                   </div>
 
                   {/* Product Info */}
-                  <div className="sm:w-1/2 p-6">
+                  <div className="w-full sm:w-1/2 p-4 sm:p-6">
                     <div className="mb-4">
                       <Dialog.Title
                         as="h3"
@@ -306,14 +304,12 @@ export default function ProductDetailModal({
                         {product.title}
                       </Dialog.Title>
                       
-                      {/* Category Badge */}
                       <div className="mt-2">
                         <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
                           {product.category}
                         </span>
                       </div>
 
-                      {/* Price */}
                       <div className="mt-4">
                         <span className="text-3xl font-bold text-indigo-600">
                           {(Number(product.price) / 1e9).toFixed(2)}
@@ -321,7 +317,6 @@ export default function ProductDetailModal({
                         <span className="text-lg text-gray-500 ml-2">SUI</span>
                       </div>
 
-                      {/* Rating */}
                       {Number(product.rating_count) > 0 && (
                         <div className="mt-2 flex items-center">
                           <span className="text-yellow-500">
@@ -335,7 +330,6 @@ export default function ProductDetailModal({
                         </div>
                       )}
 
-                      {/* Seller Info */}
                       <div className="mt-4">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
@@ -362,7 +356,6 @@ export default function ProductDetailModal({
                       </div>
                     </div>
 
-                    {/* Tabs */}
                     <Tab.Group selectedIndex={activeTab} onChange={setActiveTab}>
                       <Tab.List className="flex space-x-1 rounded-xl bg-gray-100 p-1">
                         {tabs.map((tab) => (
@@ -383,7 +376,6 @@ export default function ProductDetailModal({
                         ))}
                       </Tab.List>
                       <Tab.Panels className="mt-4 max-h-64 overflow-y-auto">
-                        {/* Details Tab */}
                         <Tab.Panel className="rounded-xl bg-white p-3">
                           <p className="text-sm text-gray-700">{product.description}</p>
                           <div className="mt-4 space-y-2 text-sm text-gray-600">
@@ -401,15 +393,12 @@ export default function ProductDetailModal({
                           </div>
                         </Tab.Panel>
 
-                        {/* Reviews Tab */}
                         <Tab.Panel className="rounded-xl bg-white p-3">
                           <div className="space-y-6">
-                            {/* Review Form - Only show if user has purchased */}
                             {account && hasPurchased && (
                               <form onSubmit={handleReviewSubmit} className="bg-gray-50 rounded-lg p-4">
                                 <h4 className="font-semibold text-gray-900 mb-3">Write a Review</h4>
                                 
-                                {/* Star Rating */}
                                 <div className="mb-3">
                                   <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Your Rating *
@@ -428,7 +417,6 @@ export default function ProductDetailModal({
                                   </div>
                                 </div>
 
-                                {/* Review Text */}
                                 <div className="mb-3">
                                   <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Your Review (Optional)
@@ -451,7 +439,6 @@ export default function ProductDetailModal({
                               </form>
                             )}
 
-                            {/* Message if not purchased */}
                             {account && !hasPurchased && (
                               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
                                 <p className="text-sm text-yellow-800">
@@ -460,7 +447,6 @@ export default function ProductDetailModal({
                               </div>
                             )}
 
-                            {/* Existing Reviews */}
                             <div>
                               <h4 className="font-semibold text-gray-900 mb-3">
                                 Customer Reviews ({reviews.length})
@@ -503,11 +489,9 @@ export default function ProductDetailModal({
                       </Tab.Panels>
                     </Tab.Group>
 
-                    {/* Action Buttons */}
                     <div className="mt-6">
                       {product.is_available ? (
                         <div className="space-y-3">
-                          {/* Favorite Button */}
                           {account && (
                             <button
                               type="button"
@@ -529,7 +513,6 @@ export default function ProductDetailModal({
                             </button>
                           )}
 
-                          {/* Purchase Button */}
                           <button
                             type="button"
                             onClick={handlePurchase}
@@ -545,7 +528,6 @@ export default function ProductDetailModal({
                               : `💳 Buy Now - ${(Number(product.price) / 1e9).toFixed(2)} SUI`}
                           </button>
 
-                          {/* Add to Cart Button */}
                           {account && product.seller !== account?.address && (
                             <button
                               type="button"

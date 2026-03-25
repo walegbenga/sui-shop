@@ -3,10 +3,10 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useCart } from '@/contexts/CartContext';
-import { ShoppingCartIcon } from '@heroicons/react/24/outline';
+import { ShoppingCartIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Dialog, Transition } from '@headlessui/react';
-import AuthButton from './AuthButton';
 import { useState } from 'react';
+import AuthButton from './AuthButton';
 
 interface LayoutProps {
   children: ReactNode;
@@ -17,6 +17,7 @@ export default function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const { cart, removeFromCart, itemCount, totalPrice } = useCart();
   const [cartOpen, setCartOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navigation = [
     { name: 'Marketplace', href: '/', current: router.pathname === '/' },
@@ -28,21 +29,33 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'Followers', href: '/followers', current: router.pathname === '/followers' },
     { name: 'Profile', href: '/profile', current: router.pathname === '/profile' },
   ];
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            {/* Logo */}
-            <div className="flex items-center">
-              <Link href="/" className="text-2xl font-bold text-indigo-600">
-                🛍️ Sui Shop
+            {/* Logo - Responsive sizing */}
+            <div className="flex items-center space-x-2">
+              {/* ✅ ADDED: Hamburger Menu Button (Mobile Only) */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="lg:hidden p-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                {mobileMenuOpen ? (
+                  <XMarkIcon className="h-6 w-6" />
+                ) : (
+                  <Bars3Icon className="h-6 w-6" />
+                )}
+              </button>
+              <Link href="/" className="text-xl sm:text-2xl font-bold text-indigo-600">
+                🛍️ <span className="hidden sm:inline">Sui Shop</span>
               </Link>
             </div>
 
-            {/* Navigation */}
-            <nav className="hidden md:flex space-x-8">
+            {/* Navigation - Desktop */}
+            <nav className="hidden lg:flex space-x-4">
               {navigation.map((item) => (
                 <Link
                   key={item.name}
@@ -51,21 +64,21 @@ export default function Layout({ children }: LayoutProps) {
                     item.current
                       ? 'border-indigo-500 text-gray-900'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
                 >
                   {item.name}
                 </Link>
               ))}
             </nav>
 
-            {/* Right side */}
-            <div className="flex items-center space-x-4">
+            {/* Right side - Better mobile spacing */}
+            <div className="flex items-center space-x-2 sm:space-x-4">
               {/* Cart Icon */}
               <button
                 onClick={() => setCartOpen(true)}
-                className="relative p-2 text-gray-600 hover:text-gray-900"
+                className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
               >
-                <ShoppingCartIcon className="h-6 w-6" />
+                <ShoppingCartIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                 {itemCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {itemCount}
@@ -76,32 +89,39 @@ export default function Layout({ children }: LayoutProps) {
               {account && (
                 <Link
                   href="/list-product"
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-500 transition-colors"
+                  className="bg-indigo-600 text-white px-3 py-2 sm:px-4 rounded-lg text-xs sm:text-sm font-semibold hover:bg-indigo-500 transition-colors whitespace-nowrap"
                 >
-                  + List Product
+                  <span className="hidden sm:inline">+ List Product</span>
+                  <span className="sm:hidden">+</span>
                 </Link>
               )}
               
-              <AuthButton />
+              <div className="min-w-[80px] sm:min-w-[120px]">
+                <AuthButton />
+              </div>
             </div>
           </div>
 
           {/* Mobile Navigation */}
-          <div className="md:hidden border-t border-gray-200 py-3 space-y-1">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`${
-                  item.current
-                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
-                    : 'border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800'
-                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
-              >
-                {item.name}
-              </Link>
-            ))}
-          </div>
+          {/* ✅ UPDATED: Mobile Navigation - Only show when mobileMenuOpen is true */}
+          {mobileMenuOpen && (
+            <div className="lg:hidden border-t border-gray-200 py-3 space-y-1">
+              {navigation.map((item) => (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)} // ✅ Close menu on click
+                  className={`${
+                    item.current
+                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                      : 'border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800'
+                  } block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-colors`}
+                >
+                  {item.name}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
@@ -112,14 +132,14 @@ export default function Layout({ children }: LayoutProps) {
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500">
-            © 2026 Sui Shop. Built by <span className="font-semibold text-indigo-600">CoA Tech</span> on the Sui Blockchain. 🚀
+            © 2026 Sui Shop. Built by <span className="font-semibold text-indigo-600">CoA Tech</span>. Built on the Sui Blockchain. 🚀
           </p>
         </div>
       </footer>
 
       {/* Cart Sidebar */}
       <Transition.Root show={cartOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={setCartOpen}>
+        <Dialog open={cartOpen} as="div" className="relative z-50" onClose={setCartOpen}>
           <Transition.Child
             as={Fragment}
             enter="ease-in-out duration-300"
@@ -154,7 +174,7 @@ export default function Layout({ children }: LayoutProps) {
                           <div className="ml-3 flex h-7 items-center">
                             <button
                               type="button"
-                              className="relative -m-2 p-2 text-gray-400 hover:text-gray-500"
+                              className="relative -m-2 p-2 text-gray-400 hover:text-gray-500 transition-colors"
                               onClick={() => setCartOpen(false)}
                             >
                               <span className="sr-only">Close panel</span>
@@ -196,7 +216,7 @@ export default function Layout({ children }: LayoutProps) {
                                         <button
                                           type="button"
                                           onClick={() => removeFromCart(item.id)}
-                                          className="font-medium text-indigo-600 hover:text-indigo-500"
+                                          className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
                                         >
                                           Remove
                                         </button>
@@ -221,7 +241,7 @@ export default function Layout({ children }: LayoutProps) {
                             <Link
                               href="/checkout"
                               onClick={() => setCartOpen(false)}
-                              className="flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-6 py-3 text-base font-medium text-white shadow-sm hover:bg-indigo-700"
+                              className="flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-6 py-3 text-base font-medium text-white shadow-sm hover:bg-indigo-700 transition-colors"
                             >
                               Checkout
                             </Link>

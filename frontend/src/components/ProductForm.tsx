@@ -4,6 +4,7 @@ import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@
 import { Transaction } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
 import toast from 'react-hot-toast';
+import LoadingButton from './LoadingButton';
 
 const CATEGORIES = ['Electronics', 'Fashion', 'Home', 'Sports', 'Books', 'Other'];
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
@@ -26,6 +27,8 @@ export default function ProductForm({ productId }: ProductFormProps) {
     price: '',
     imageUrl: '',
     category: 'Electronics',
+    quantity: '1',        // ✅ ADDED
+    resellable: false,    // ✅ ADDED
   });
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEditMode);
@@ -53,6 +56,8 @@ export default function ProductForm({ productId }: ProductFormProps) {
         price: (Number(data.price) / 1e9).toString(),
         imageUrl: data.image_url,
         category: data.category,
+        quantity: data.quantity?.toString() || '1',        // ✅ ADDED
+        resellable: data.resellable || false,              // ✅ ADDED
       });
     } catch (error) {
       console.error('Error fetching product:', error);
@@ -136,6 +141,8 @@ export default function ProductForm({ productId }: ProductFormProps) {
         price: priceInMist,
         image_url: formData.imageUrl,
         category: formData.category,
+        quantity: parseInt(formData.quantity),           // ✅ ADDED
+        resellable: formData.resellable,
         seller: account.address,
       }),
     });
@@ -256,6 +263,49 @@ export default function ProductForm({ productId }: ProductFormProps) {
           </select>
         </div>
 
+        {/* ✅ ADDED: Quantity Field */}
+        <div>
+          <label htmlFor="quantity" className="block text-sm font-medium text-gray-700">
+            Quantity *
+          </label>
+          <input
+            type="number"
+            id="quantity"
+            value={formData.quantity}
+            onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+            min="1"
+            step="1"
+            required
+          />
+          <p className="mt-1 text-sm text-gray-500">
+            How many copies are available? (For limited editions, set a specific number)
+          </p>
+        </div>
+
+        {/* ✅ ADDED: Resellable Toggle */}
+        <div>
+          <div className="flex items-start">
+            <div className="flex items-center h-5">
+              <input
+                id="resellable"
+                type="checkbox"
+                checked={formData.resellable}
+                onChange={(e) => setFormData({ ...formData, resellable: e.target.checked })}
+                className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              />
+            </div>
+            <div className="ml-3">
+              <label htmlFor="resellable" className="font-medium text-gray-700">
+                Resellable Product
+              </label>
+              <p className="text-sm text-gray-500">
+                Allow buyers to resell this product (with royalties). Perfect for digital collectibles and limited editions.
+              </p>
+            </div>
+          </div>
+        </div>
+        
         {/* Info Note */}
         {isEditMode && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -267,13 +317,14 @@ export default function ProductForm({ productId }: ProductFormProps) {
 
         {/* Buttons */}
         <div className="flex gap-4">
-          <button
+          <LoadingButton
             type="submit"
-            disabled={loading}
+            loading={loading}
+            loadingText={isEditMode ? 'Updating...' : 'Listing...'}
             className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {loading ? (isEditMode ? 'Updating...' : 'Listing...') : (isEditMode ? 'Update Product' : 'List Product')}
-          </button>
+            {isEditMode ? 'Update Product' : 'List Product'}
+          </LoadingButton>
           <button
             type="button"
             onClick={() => router.push('/my-products')}
