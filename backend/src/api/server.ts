@@ -161,6 +161,53 @@ app.put('/api/products/:id', async (req, res) => {
   }
 });
 
+// Get single product by ID
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT 
+        id, seller, title, description, price, image_url, category,
+        is_available, total_sales, rating_sum, rating_count,
+        quantity, available_quantity, resellable, created_at
+       FROM products 
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    res.status(500).json({ error: 'Failed to fetch product' });
+  }
+});
+
+// Get single product by ID
+/*app.get('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT * FROM products WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    res.status(500).json({ error: 'Failed to fetch product' });
+  }
+});*/
+
 // Search products
 app.get('/api/products/search/:query', async (req, res) => {
   try {
