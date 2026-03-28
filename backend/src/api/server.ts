@@ -6,6 +6,10 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { PinataSDK } from 'pinata-web3';
+import multer from 'multer';
+import { Request, Response } from 'express';
+
 import { pool } from '../config/database';
 
 dotenv.config();
@@ -16,6 +20,18 @@ const PORT = process.env.PORT || 4000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
+});
+
+// Initialize Pinata
+const pinata = new PinataSDK({
+  pinataJwt: process.env.PINATA_API_KEY!,
+  pinataGateway: 'gateway.pinata.cloud'
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -830,6 +846,91 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
   } catch (error) {
     console.error('Error fetching followers:', error);
     res.status(500).json({ error: 'Failed to fetch followers' });
+  }
+});
+
+
+// Download file (only for buyers)
+app.get('/api/download/:productId/:userAddress', async (req, res) => {
+  try {
+    const { productId, userAddress } = req.params;
+
+    // Verify user purchased this product
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [productId, userAddress]
+    );
+
+    if (purchase.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product to download' });
+    }
+
+    // Get product file info
+    const product = await pool.query(
+      'SELECT file_cid, file_name FROM products WHERE id = $1',
+      [productId]
+    );
+
+    if (product.rows.length === 0 || !product.rows[0].file_cid) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const { file_cid, file_name } = product.rows[0];
+
+    // Track download
+    await pool.query(
+      'INSERT INTO downloads (product_id, buyer) VALUES ($1, $2)',
+      [productId, userAddress]
+    );
+
+    // Return IPFS URL
+    res.json({
+      url: `https://gateway.pinata.cloud/ipfs/${file_cid}`,
+      fileName: file_name
+    });
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    res.status(500).json({ error: 'Failed to get download link' });
+  }
+});
+
+// Upload file to IPFS
+// Upload file to IPFS
+app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { seller } = req.body;
+    if (!seller) {
+      return res.status(400).json({ error: 'Seller address required' });
+    }
+
+    console.log(`📤 Uploading file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+    // ✅ FIX: Convert Buffer to File properly
+    const uint8Array = new Uint8Array(req.file.buffer);
+    const blob = new Blob([uint8Array], { type: req.file.mimetype });
+    const file = new File([blob], req.file.originalname, { 
+      type: req.file.mimetype,
+      lastModified: Date.now()
+    });
+
+    // Upload to Pinata
+    const result = await pinata.upload.file(file);
+
+    console.log(`✅ File uploaded to IPFS: ${result.IpfsHash}`);
+
+    res.json({
+      cid: result.IpfsHash,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      url: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`
+    });
+  } catch (error: any) {
+    console.error('Error uploading to IPFS:', error);
+    res.status(500).json({ error: 'Failed to upload file' });
   }
 });
 

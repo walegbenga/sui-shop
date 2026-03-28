@@ -1,339 +1,399 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
+import { useEffect, useState } from 'react';
+import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
+import { Dialog, Transition } from '@headlessui/react';
+import { Fragment } from 'react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import LoadingButton from './LoadingButton';
+import { useFavoriteProduct, useFollowSeller } from '@/hooks/useSocialFeatures';
 
-const CATEGORIES = ['Electronics', 'Fashion', 'Home', 'Sports', 'Books', 'Other'];
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
-interface ProductFormProps {
-  productId?: string;
+interface Product {
+  id: string;
+  title: string;
+  description: string;
+  price: string;
+  image_url: string;
+  category: string;
+  seller: string;
+  is_available: boolean;
+  total_sales: string;
+  rating_sum: string;
+  rating_count: string;
+  quantity: number;
+  available_quantity: number;
+  resellable: boolean;
+  file_cid?: string;
+  file_name?: string;
+  file_size?: number;
 }
 
-export default function ProductForm({ productId }: ProductFormProps) {
-  const router = useRouter();
-  const account = useCurrentAccount();
-  const client = useSuiClient();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
-  const isEditMode = !!productId;
+interface Review {
+  reviewer: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+}
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    price: '',
-    imageUrl: '',
-    category: 'Electronics',
-    quantity: '1',        // ✅ ADDED
-    resellable: false,    // ✅ ADDED
-  });
+interface ProductDetailModalProps {
+  productId: string | null;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function ProductDetailModal({ productId, isOpen, onClose }: ProductDetailModalProps) {
+  const account = useCurrentAccount();
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  
+  const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(isEditMode);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [hasPurchased, setHasPurchased] = useState(false);
+
+  const { isFavorited, toggleFavorite } = useFavoriteProduct(productId || '', account?.address);
+  const { isFollowing, toggleFollow } = useFollowSeller(product?.seller || '', account?.address);
 
   useEffect(() => {
-    if (isEditMode && productId) {
+    if (productId && isOpen) {
       fetchProduct();
+      fetchReviews();
+      checkPurchaseStatus();
     }
-  }, [productId]);
+  }, [productId, isOpen, account]);
 
   const fetchProduct = async () => {
+    if (!productId) return;
+    setLoading(true);
     try {
       const response = await fetch(`http://localhost:4000/api/products/${productId}`);
       const data = await response.json();
-
-      if (data.seller !== account?.address) {
-        toast.error('You do not own this product');
-        router.push('/my-products');
-        return;
-      }
-
-      setFormData({
-        title: data.title,
-        description: data.description,
-        price: (Number(data.price) / 1e9).toString(),
-        imageUrl: data.image_url,
-        category: data.category,
-        quantity: data.quantity?.toString() || '1',        // ✅ ADDED
-        resellable: data.resellable || false,              // ✅ ADDED
-      });
+      setProduct(data);
     } catch (error) {
       console.error('Error fetching product:', error);
       toast.error('Failed to load product');
-    } finally {
-      setFetching(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!account) {
-      toast.error('Please connect your wallet');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      if (isEditMode) {
-        await handleUpdate();
-      } else {
-        await handleCreate();
-      }
-    } catch (error: any) {
-      console.error('Error:', error);
-      toast.error(`Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreate = async () => {
-    const priceInMist = Math.floor(Number(formData.price) * 1_000_000_000);
+  const fetchReviews = async () => {
+    if (!productId) return;
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${productId}/reviews`);
+      const data = await response.json();
+      setReviews(data.reviews || []);
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+    }
+  };
+
+  const checkPurchaseStatus = async () => {
+    if (!account?.address || !productId) return;
+    try {
+      const response = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
+      const data = await response.json();
+      const purchased = data.purchases.some((p: any) => p.product_id === productId);
+      setHasPurchased(purchased);
+    } catch (error) {
+      console.error('Error checking purchase status:', error);
+    }
+  };
+
+  const handlePurchase = () => {
+    if (!account || !product) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    if (product.seller === account.address) {
+      toast.error('You cannot buy your own product');
+      return;
+    }
 
     const tx = new Transaction();
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure(bcs.u64().serialize(product.price).toBytes())]);
+
     tx.moveCall({
-      target: `${PACKAGE_ID}::marketplace::list_product`,
+      target: `${PACKAGE_ID}::marketplace::purchase_product`,
       arguments: [
         tx.object(MARKETPLACE_ID),
-        tx.pure(bcs.string().serialize(formData.title).toBytes()),
-        tx.pure(bcs.string().serialize(formData.description).toBytes()),
-        tx.pure(bcs.u64().serialize(priceInMist).toBytes()),
-        tx.pure(bcs.string().serialize(formData.imageUrl).toBytes()),
-        tx.pure(bcs.string().serialize(formData.category).toBytes()),
+        tx.pure(bcs.string().serialize(product.id).toBytes()),
+        coin,
         tx.object('0x6'),
       ],
     });
 
     signAndExecuteTransaction(
+      { transaction: tx },
       {
-        transaction: tx,
-      },
-      {
-        onSuccess: (result) => {
-          console.log('Transaction successful:', result);
-          toast.success('Product listed successfully! 🎉');
-          setTimeout(() => {
-            router.push('/my-products');
-          }, 1500);
+        onSuccess: () => {
+          toast.success('Purchase successful! 🎉');
+          onClose();
         },
         onError: (error) => {
-          console.error('Transaction failed:', error);
-          toast.error('Failed to list product');
-          setLoading(false);
+          console.error('Purchase failed:', error);
+          toast.error('Purchase failed');
         },
       }
     );
   };
 
-  const handleUpdate = async () => {
-    const priceInMist = Math.floor(Number(formData.price) * 1_000_000_000);
+  const handleAddToCart = () => {
+    if (!product) return;
+    toast.success('Added to cart! 🛒');
+  };
 
-    const response = await fetch(`http://localhost:4000/api/products/${productId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: formData.title,
-        description: formData.description,
-        price: priceInMist,
-        image_url: formData.imageUrl,
-        category: formData.category,
-        quantity: parseInt(formData.quantity),           // ✅ ADDED
-        resellable: formData.resellable,
-        seller: account.address,
-      }),
-    });
+  const handleReviewSubmit = async () => {
+    if (!account?.address || !product) return;
 
-    if (response.ok) {
-      toast.success('Product updated successfully! 🎉');
-      setTimeout(() => {
-        router.push('/my-products');
-      }, 1500);
-    } else {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update product');
+    try {
+      const response = await fetch('http://localhost:4000/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: product.id,
+          reviewer: account.address,
+          rating: reviewRating,
+          comment: reviewComment,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success('Review submitted! ⭐');
+        setReviewComment('');
+        setReviewRating(5);
+        fetchReviews();
+      }
+    } catch (error) {
+      toast.error('Failed to submit review');
     }
   };
 
-  if (fetching) {
-    return (
-      <div className="text-center py-12">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
-        <p className="mt-2 text-gray-600">Loading product...</p>
-      </div>
-    );
-  }
+  const handleDownload = async () => {
+    if (!account?.address || !product) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:4000/api/download/${product.id}/${account.address}`
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.error || 'Download failed');
+        return;
+      }
+
+      const data = await response.json();
+      window.open(data.url, '_blank');
+      toast.success('Download started! 📥');
+    } catch (error: any) {
+      toast.error(`Download error: ${error.message}`);
+    }
+  };
+
+  if (!product) return null;
 
   return (
-    <div className="bg-white shadow rounded-lg p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">
-        {isEditMode ? 'Edit Product' : 'List New Product'}
-      </h1>
+    <Transition appear show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={onClose}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black bg-opacity-25" />
+        </Transition.Child>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Title */}
-        <div>
-          <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-            Product Title *
-          </label>
-          <input
-            type="text"
-            id="title"
-            value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-            required
-          />
-        </div>
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                {/* Close Button */}
+                <button
+                  onClick={onClose}
+                  className="absolute right-4 top-4 text-gray-400 hover:text-gray-500"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
 
-        {/* Description */}
-        <div>
-          <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-            Description *
-          </label>
-          <textarea
-            id="description"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            rows={4}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-            required
-          />
-        </div>
+                {/* Content */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left: Image */}
+                  <div>
+                    <img
+                      src={product.image_url}
+                      alt={product.title}
+                      className="w-full h-96 object-cover rounded-lg"
+                    />
+                  </div>
 
-        {/* Price */}
-        <div>
-          <label htmlFor="price" className="block text-sm font-medium text-gray-700">
-            Price (SUI) *
-          </label>
-          <input
-            type="number"
-            id="price"
-            value={formData.price}
-            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-            step="0.01"
-            min="0.01"
-            required
-          />
-        </div>
+                  {/* Right: Details */}
+                  <div className="space-y-4">
+                    <div>
+                      <Dialog.Title className="text-2xl font-bold text-gray-900">
+                        {product.title}
+                      </Dialog.Title>
+                      <p className="text-gray-500 mt-2">{product.description}</p>
+                    </div>
 
-        {/* Image URL */}
-        <div>
-          <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-700">
-            Image URL *
-          </label>
-          <input
-            type="url"
-            id="imageUrl"
-            value={formData.imageUrl}
-            onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-            required
-          />
-          {formData.imageUrl && (
-            <img
-              src={formData.imageUrl}
-              alt="Preview"
-              className="mt-2 h-32 w-32 object-cover rounded-md border"
-            />
-          )}
-        </div>
+                    {/* Price */}
+                    <div className="text-3xl font-bold text-indigo-600">
+                      {(Number(product.price) / 1e9).toFixed(2)} SUI
+                    </div>
 
-        {/* Category */}
-        <div>
-          <label htmlFor="category" className="block text-sm font-medium text-gray-700">
-            Category *
-          </label>
-          <select
-            id="category"
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-            required
-          >
-            {CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-        </div>
+                    {/* Stock & Resellable */}
+                    <div className="flex gap-2">
+                      {product.quantity > 1 && (
+                        <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm">
+                          {product.available_quantity}/{product.quantity} Available
+                        </span>
+                      )}
+                      {product.resellable && (
+                        <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm">
+                          🔄 Resellable
+                        </span>
+                      )}
+                    </div>
 
-        {/* ✅ ADDED: Quantity Field */}
-        <div>
-          <label htmlFor="quantity" className="block text-sm font-medium text-gray-700">
-            Quantity *
-          </label>
-          <input
-            type="number"
-            id="quantity"
-            value={formData.quantity}
-            onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-            min="1"
-            step="1"
-            required
-          />
-          <p className="mt-1 text-sm text-gray-500">
-            How many copies are available? (For limited editions, set a specific number)
-          </p>
-        </div>
+                    {/* Buttons */}
+                    <div className="space-y-2">
+                      {product.seller === account?.address ? (
+                        <button
+                          disabled
+                          className="w-full bg-gray-400 text-white py-3 rounded-lg font-semibold cursor-not-allowed"
+                        >
+                          This is Your Product
+                        </button>
+                      ) : product.is_available ? (
+                        <>
+                          <button
+                            onClick={handlePurchase}
+                            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-500"
+                          >
+                            Buy Now
+                          </button>
+                          <button
+                            onClick={handleAddToCart}
+                            className="w-full border-2 border-indigo-600 text-indigo-600 py-3 rounded-lg font-semibold hover:bg-indigo-50"
+                          >
+                            Add to Cart
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          disabled
+                          className="w-full bg-gray-400 text-white py-3 rounded-lg font-semibold cursor-not-allowed"
+                        >
+                          Sold Out
+                        </button>
+                      )}
 
-        {/* ✅ ADDED: Resellable Toggle */}
-        <div>
-          <div className="flex items-start">
-            <div className="flex items-center h-5">
-              <input
-                id="resellable"
-                type="checkbox"
-                checked={formData.resellable}
-                onChange={(e) => setFormData({ ...formData, resellable: e.target.checked })}
-                className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-              />
-            </div>
-            <div className="ml-3">
-              <label htmlFor="resellable" className="font-medium text-gray-700">
-                Resellable Product
-              </label>
-              <p className="text-sm text-gray-500">
-                Allow buyers to resell this product (with royalties). Perfect for digital collectibles and limited editions.
-              </p>
-            </div>
+                      {/* Download Button */}
+                      {hasPurchased && product.file_cid && (
+                        <button
+                          onClick={handleDownload}
+                          className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-500 flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download File
+                        </button>
+                      )}
+
+                      {/* Favorite & Follow */}
+                      {account && product.seller !== account.address && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => toggleFavorite()}
+                            className="flex-1 border-2 border-gray-300 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-50"
+                          >
+                            {isFavorited ? '❤️ Favorited' : '🤍 Favorite'}
+                          </button>
+                          <button
+                            onClick={() => toggleFollow()}
+                            className="flex-1 border-2 border-gray-300 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-50"
+                          >
+                            {isFollowing ? '👤 Following' : '➕ Follow'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Reviews Section */}
+                    {hasPurchased && (
+                      <div className="border-t pt-4">
+                        <h3 className="font-semibold mb-2">Leave a Review</h3>
+                        <div className="flex gap-1 mb-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => setReviewRating(star)}
+                              className="text-2xl"
+                            >
+                              {star <= reviewRating ? '⭐' : '☆'}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          value={reviewComment}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          placeholder="Write your review..."
+                          className="w-full border rounded-lg p-2"
+                          rows={3}
+                        />
+                        <button
+                          onClick={handleReviewSubmit}
+                          className="mt-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-500"
+                        >
+                          Submit Review
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Reviews List */}
+                    {reviews.length > 0 && (
+                      <div className="border-t pt-4">
+                        <h3 className="font-semibold mb-2">Reviews ({reviews.length})</h3>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {reviews.map((review, idx) => (
+                            <div key={idx} className="bg-gray-50 p-3 rounded-lg">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-yellow-500">{'⭐'.repeat(review.rating)}</span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(review.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700">{review.comment}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
         </div>
-        
-        {/* Info Note */}
-        {isEditMode && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              ℹ️ <strong>Note:</strong> This updates the database only. Blockchain record remains unchanged.
-            </p>
-          </div>
-        )}
-
-        {/* Buttons */}
-        <div className="flex gap-4">
-          <LoadingButton
-            type="submit"
-            loading={loading}
-            loadingText={isEditMode ? 'Updating...' : 'Listing...'}
-            className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {isEditMode ? 'Update Product' : 'List Product'}
-          </LoadingButton>
-          <button
-            type="button"
-            onClick={() => router.push('/my-products')}
-            className="px-4 py-2 border border-gray-300 rounded-md font-semibold text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
+      </Dialog>
+    </Transition>
   );
 }

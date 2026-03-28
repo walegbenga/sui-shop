@@ -14,7 +14,6 @@ export default function AuthCallback() {
 
   const handleCallback = async () => {
     try {
-      // Get the authorization code from URL
       const hash = window.location.hash.substring(1);
       const params = new URLSearchParams(hash);
       const jwt = params.get('id_token');
@@ -23,10 +22,7 @@ export default function AuthCallback() {
         throw new Error('No JWT token found in callback');
       }
 
-      // Create zkLogin session
       await zkLogin.login(jwt);
-
-      // Redirect to home page
       router.push('/');
     } catch (err: any) {
       console.error('Auth callback error:', err);

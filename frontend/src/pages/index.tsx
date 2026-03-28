@@ -34,6 +34,9 @@ interface Product {
   quantity: number;
   available_quantity: number;
   resellable: boolean;
+  file_cid?: string;        // ✅ ADD
+  file_name?: string;       // ✅ ADD
+  file_size?: number;       // ✅ ADD
 }
 
 interface Pagination {
