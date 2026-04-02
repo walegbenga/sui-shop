@@ -895,7 +895,6 @@ app.get('/api/download/:productId/:userAddress', async (req, res) => {
 });
 
 // Upload file to IPFS
-// Upload file to IPFS
 app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
   try {
     if (!req.file) {
@@ -907,15 +906,23 @@ app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
       return res.status(400).json({ error: 'Seller address required' });
     }
 
-    console.log(`📤 Uploading file: ${req.file.originalname} (${req.file.size} bytes)`);
+    console.log(`📤 Uploading file: ${req.file.originalname}`);
+    console.log(`   Type: ${req.file.mimetype}`);
+    console.log(`   Size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
 
-    // ✅ FIX: Convert Buffer to File properly
-    const uint8Array = new Uint8Array(req.file.buffer);
-    const blob = new Blob([uint8Array], { type: req.file.mimetype });
-    const file = new File([blob], req.file.originalname, { 
-      type: req.file.mimetype,
-      lastModified: Date.now()
+    // Fix TypeScript Buffer type error by explicitly converting to Uint8Array
+    const uint8Array = new Uint8Array(req.file.buffer.buffer, req.file.buffer.byteOffset, req.file.buffer.byteLength);
+
+    const blob = new Blob([uint8Array.buffer as ArrayBuffer], {
+  type: req.file.mimetype || 'application/octet-stream',
+});
+
+    const file = new File([blob], req.file.originalname, {
+      type: req.file.mimetype || 'application/octet-stream',
+      lastModified: Date.now(),
     });
+
+    console.log(`📦 File object created, size: ${file.size} bytes`);
 
     // Upload to Pinata
     const result = await pinata.upload.file(file);
@@ -926,11 +933,31 @@ app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
       cid: result.IpfsHash,
       fileName: req.file.originalname,
       fileSize: req.file.size,
-      url: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`
+      url: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`,
     });
+
   } catch (error: any) {
-    console.error('Error uploading to IPFS:', error);
-    res.status(500).json({ error: 'Failed to upload file' });
+    console.error('❌ Upload error:', error.message);
+    console.error('Stack:', error.stack);
+
+    // Surface Pinata-specific errors clearly
+    if (error.response) {
+      console.error('Pinata response error:', {
+        status: error.response.status,
+        data: error.response.data,
+      });
+      return res.status(500).json({
+        error: 'Pinata upload failed',
+        details: error.response.data,
+        status: error.response.status,
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to upload file',
+      details: error.message,
+      type: error.constructor.name,
+    });
   }
 });
 

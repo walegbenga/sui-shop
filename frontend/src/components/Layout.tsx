@@ -1,155 +1,151 @@
-import { ReactNode, Fragment } from 'react';
-import { useCurrentAccount } from '@mysten/dapp-kit';
+import { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useCart } from '@/contexts/CartContext';
-import { ShoppingCartIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
+import { useCurrentAccount } from '@mysten/dapp-kit';
 import { Dialog, Transition } from '@headlessui/react';
-import { useState } from 'react';
+import { Fragment } from 'react';
+import { XMarkIcon, ShoppingCartIcon } from '@heroicons/react/24/outline';
 import AuthButton from './AuthButton';
+import Logo from './Logo';
+import { useCart } from '@/contexts/CartContext';
+import toast from 'react-hot-toast';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const account = useCurrentAccount();
   const router = useRouter();
-  const { cart, removeFromCart, itemCount, totalPrice } = useCart();
+  const account = useCurrentAccount();
+  const { cart, removeFromCart, clearCart } = useCart();
   const [cartOpen, setCartOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navigation = [
-    { name: 'Marketplace', href: '/', current: router.pathname === '/' },
-    { name: 'My Products', href: '/my-products', current: router.pathname === '/my-products' },
-    { name: 'Analytics', href: '/analytics', current: router.pathname === '/analytics' },
-    { name: 'My Purchases', href: '/my-purchases', current: router.pathname === '/my-purchases' },
-    { name: 'Favorites', href: '/favorites', current: router.pathname === '/favorites' },
-    { name: 'Following', href: '/following', current: router.pathname === '/following' },
-    { name: 'Followers', href: '/followers', current: router.pathname === '/followers' },
-    { name: 'Profile', href: '/profile', current: router.pathname === '/profile' },
+  const totalPrice = cart.reduce((sum, item) => sum + Number(item.price), 0);
+
+  const handleCheckout = () => {
+    toast.success('Checkout feature coming soon!');
+    setCartOpen(false);
+  };
+
+  const navLinks = [
+    { href: '/', label: 'Marketplace', requireAuth: false },
+    { href: '/my-products', label: 'My Products', requireAuth: true },
+    { href: '/analytics', label: 'Analytics', requireAuth: true },
+    { href: '/favorites', label: 'Favorites', requireAuth: true },
+    { href: '/followers', label: 'Followers', requireAuth: true },
+    { href: '/following', label: 'Following', requireAuth: true },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            {/* Logo - Responsive sizing */}
-            <div className="flex items-center space-x-2">
-              {/* ✅ ADDED: Hamburger Menu Button (Mobile Only) */}
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden p-2 text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                {mobileMenuOpen ? (
-                  <XMarkIcon className="h-6 w-6" />
-                ) : (
-                  <Bars3Icon className="h-6 w-6" />
-                )}
-              </button>
-              <Link href="/" className="text-xl sm:text-2xl font-bold text-indigo-600">
-                🛍️ <span className="hidden sm:inline">Sui Shop</span>
-              </Link>
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
+        <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
+            {/* Logo */}
+            <Link href="/" className="flex items-center hover:opacity-80 transition-opacity">
+              <Logo className="h-10" />
+            </Link>
+
+            {/* Desktop Navigation */}
+            <div className="hidden lg:flex items-center gap-6">
+              {navLinks.map((link) => {
+                if (link.requireAuth && !account) return null;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`text-sm font-semibold transition-colors ${
+                      router.pathname === link.href
+                        ? 'text-indigo-600'
+                        : 'text-gray-700 hover:text-indigo-600'
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
             </div>
 
-            {/* Navigation - Desktop */}
-            <nav className="hidden lg:flex space-x-4">
-              {navigation.map((item) => (
+            {/* Right Side Actions */}
+            <div className="flex items-center gap-3">
+              {/* List Product Button */}
+              {account && (
                 <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`${
-                    item.current
-                      ? 'border-indigo-500 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+                  href="/list-product"
+                  className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
                 >
-                  {item.name}
+                  <span className="text-lg">+</span>
+                  <span>List Product</span>
                 </Link>
-              ))}
-            </nav>
+              )}
 
-            {/* Right side - Better mobile spacing */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              {/* Cart Icon */}
+              {/* Cart Button */}
               <button
                 onClick={() => setCartOpen(true)}
-                className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
+                className="relative p-2 text-gray-700 hover:text-indigo-600 transition-colors"
               >
-                <ShoppingCartIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-                {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {itemCount}
+                <ShoppingCartIcon className="h-6 w-6" />
+                {cart.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                    {cart.length}
                   </span>
                 )}
               </button>
 
-              {account && (
-                <Link
-                  href="/list-product"
-                  className="bg-indigo-600 text-white px-3 py-2 sm:px-4 rounded-lg text-xs sm:text-sm font-semibold hover:bg-indigo-500 transition-colors whitespace-nowrap"
-                >
-                  <span className="hidden sm:inline">+ List Product</span>
-                  <span className="sm:hidden">+</span>
-                </Link>
-              )}
-              
-              <div className="min-w-[80px] sm:min-w-[120px]">
-                <AuthButton />
-              </div>
+              {/* Auth Button */}
+              <AuthButton />
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-2 text-gray-700"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
             </div>
           </div>
-
-          {/* Mobile Navigation */}
-          {/* ✅ UPDATED: Mobile Navigation - Only show when mobileMenuOpen is true */}
-          {mobileMenuOpen && (
-            <div className="lg:hidden border-t border-gray-200 py-3 space-y-1">
-              {navigation.map((item) => (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  onClick={() => setMobileMenuOpen(false)} // ✅ Close menu on click
-                  className={`${
-                    item.current
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
-                      : 'border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800'
-                  } block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-colors`}
-                >
-                  {item.name}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        </nav>
       </header>
 
       {/* Main Content */}
-      <main>{children}</main>
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+        {children}
+      </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-gray-500">
-            © 2026 Sui Shop. Built by <span className="font-semibold text-indigo-600">CoA Tech</span>. Built on the Sui Blockchain. 🚀
-          </p>
+      <footer className="border-t border-gray-200 bg-white mt-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Logo className="h-8" />
+              <span className="text-sm text-gray-600">© 2026 CoA Tech. All rights reserved.</span>
+            </div>
+            <div className="flex gap-6 text-sm text-gray-600">
+              <a href="#" className="hover:text-indigo-600 transition-colors">About</a>
+              <a href="#" className="hover:text-indigo-600 transition-colors">Terms</a>
+              <a href="#" className="hover:text-indigo-600 transition-colors">Privacy</a>
+            </div>
+          </div>
         </div>
       </footer>
 
-      {/* Cart Sidebar */}
-      <Transition.Root show={cartOpen} as={Fragment}>
-        <Dialog open={cartOpen} as="div" className="relative z-50" onClose={setCartOpen}>
+      {/* Shopping Cart Modal */}
+      <Transition appear show={cartOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setCartOpen(false)}>
           <Transition.Child
             as={Fragment}
-            enter="ease-in-out duration-300"
+            enter="ease-out duration-300"
             enterFrom="opacity-0"
             enterTo="opacity-100"
-            leave="ease-in-out duration-300"
+            leave="ease-in duration-200"
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
           </Transition.Child>
 
           <div className="fixed inset-0 overflow-hidden">
@@ -165,87 +161,54 @@ export default function Layout({ children }: LayoutProps) {
                   leaveTo="translate-x-full"
                 >
                   <Dialog.Panel className="pointer-events-auto w-screen max-w-md">
-                    <div className="flex h-full flex-col overflow-y-scroll bg-white shadow-xl">
-                      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-                        <div className="flex items-start justify-between">
-                          <Dialog.Title className="text-lg font-medium text-gray-900">
-                            Shopping Cart
-                          </Dialog.Title>
-                          <div className="ml-3 flex h-7 items-center">
-                            <button
-                              type="button"
-                              className="relative -m-2 p-2 text-gray-400 hover:text-gray-500 transition-colors"
-                              onClick={() => setCartOpen(false)}
-                            >
-                              <span className="sr-only">Close panel</span>
-                              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
+                    <div className="flex h-full flex-col bg-white shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                        <Dialog.Title className="text-xl font-bold text-gray-900">
+                          Shopping Cart ({cart.length})
+                        </Dialog.Title>
+                        <button onClick={() => setCartOpen(false)} className="text-gray-400 hover:text-gray-500">
+                          <XMarkIcon className="h-6 w-6" />
+                        </button>
+                      </div>
 
-                        <div className="mt-8">
-                          <div className="flow-root">
-                            {cart.length === 0 ? (
-                              <div className="text-center py-12">
-                                <ShoppingCartIcon className="mx-auto h-12 w-12 text-gray-400" />
-                                <p className="mt-2 text-sm text-gray-500">Your cart is empty</p>
+                      <div className="flex-1 overflow-y-auto px-6 py-4">
+                        {cart.length === 0 ? (
+                          <div className="text-center py-12">
+                            <ShoppingCartIcon className="mx-auto h-12 w-12 text-gray-400" />
+                            <p className="mt-4 text-gray-600">Your cart is empty</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {cart.map((item) => (
+                              <div key={item.id} className="flex gap-4 border-b border-gray-100 pb-4">
+                                <img src={item.imageUrl} alt={item.title} className="h-20 w-20 object-cover rounded-lg" />
+                                <div className="flex-1">
+                                  <h3 className="font-semibold text-gray-900">{item.title}</h3>
+                                  <p className="text-sm text-indigo-600 font-bold mt-1">
+                                    {(Number(item.price) / 1e9).toFixed(2)} SUI
+                                  </p>
+                                </div>
+                                <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-600">
+                                  <XMarkIcon className="h-5 w-5" />
+                                </button>
                               </div>
-                            ) : (
-                              <ul className="-my-6 divide-y divide-gray-200">
-                                {cart.map((item) => (
-                                  <li key={item.id} className="flex py-6">
-                                    <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-gray-200">
-                                      <img
-                                        src={item.imageUrl}
-                                        alt={item.title}
-                                        className="h-full w-full object-cover object-center"
-                                      />
-                                    </div>
-
-                                    <div className="ml-4 flex flex-1 flex-col">
-                                      <div>
-                                        <div className="flex justify-between text-base font-medium text-gray-900">
-                                          <h3>{item.title}</h3>
-                                          <p className="ml-4">{(Number(item.price) / 1e9).toFixed(2)} SUI</p>
-                                        </div>
-                                        <p className="mt-1 text-sm text-gray-500">{item.category}</p>
-                                      </div>
-                                      <div className="flex flex-1 items-end justify-between text-sm">
-                                        <button
-                                          type="button"
-                                          onClick={() => removeFromCart(item.id)}
-                                          className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
-                                        >
-                                          Remove
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
+                            ))}
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       {cart.length > 0 && (
-                        <div className="border-t border-gray-200 px-4 py-6 sm:px-6">
-                          <div className="flex justify-between text-base font-medium text-gray-900">
-                            <p>Subtotal</p>
-                            <p>{(totalPrice / 1e9).toFixed(2)} SUI</p>
+                        <div className="border-t border-gray-200 px-6 py-6 space-y-4">
+                          <div className="flex justify-between text-lg font-bold">
+                            <span>Total</span>
+                            <span className="text-indigo-600">{(totalPrice / 1e9).toFixed(2)} SUI</span>
                           </div>
-                          <p className="mt-0.5 text-sm text-gray-500">{itemCount} item(s)</p>
-                          <div className="mt-6">
-                            <Link
-                              href="/checkout"
-                              onClick={() => setCartOpen(false)}
-                              className="flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-6 py-3 text-base font-medium text-white shadow-sm hover:bg-indigo-700 transition-colors"
-                            >
-                              Checkout
-                            </Link>
-                          </div>
+                          <button onClick={handleCheckout} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg">
+                            Checkout
+                          </button>
+                          <button onClick={clearCart} className="w-full border-2 border-gray-300 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-all">
+                            Clear Cart
+                          </button>
                         </div>
                       )}
                     </div>
@@ -255,7 +218,74 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           </div>
         </Dialog>
-      </Transition.Root>
+      </Transition>
+
+      {/* Mobile Menu */}
+      <Transition appear show={mobileMenuOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50 lg:hidden" onClose={() => setMobileMenuOpen(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/30" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 overflow-hidden">
+            <div className="absolute inset-0 overflow-hidden">
+              <div className="pointer-events-none fixed inset-y-0 left-0 flex max-w-full pr-10">
+                <Transition.Child
+                  as={Fragment}
+                  enter="transform transition ease-in-out duration-300"
+                  enterFrom="-translate-x-full"
+                  enterTo="translate-x-0"
+                  leave="transform transition ease-in-out duration-300"
+                  leaveFrom="translate-x-0"
+                  leaveTo="-translate-x-full"
+                >
+                  <Dialog.Panel className="pointer-events-auto w-screen max-w-sm">
+                    <div className="flex h-full flex-col bg-white shadow-xl">
+                      <div className="px-6 py-4 border-b">
+                        <button onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-gray-500">
+                          <XMarkIcon className="h-6 w-6" />
+                        </button>
+                      </div>
+                      <div className="flex-1 px-6 py-6 space-y-4">
+                        {navLinks.map((link) => {
+                          if (link.requireAuth && !account) return null;
+                          return (
+                            <Link
+                              key={link.href}
+                              href={link.href}
+                              onClick={() => setMobileMenuOpen(false)}
+                              className="block text-lg font-semibold text-gray-900 hover:text-indigo-600"
+                            >
+                              {link.label}
+                            </Link>
+                          );
+                        })}
+                        {account && (
+                          <Link
+                            href="/list-product"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="block text-lg font-semibold text-indigo-600 hover:text-indigo-700"
+                          >
+                            + List Product
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  </Dialog.Panel>
+                </Transition.Child>
+              </div>
+            </div>
+          </div>
+        </Dialog>
+      </Transition>
     </div>
   );
 }

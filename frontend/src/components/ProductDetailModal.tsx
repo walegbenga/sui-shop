@@ -1,26 +1,42 @@
-import { Fragment, useState, useEffect } from 'react';
-import {
-  Dialog,
-  DialogPanel,
-  DialogTitle,
-  DialogBackdrop,
-  Tab,
-  TabGroup,
-  TabList,
-  TabPanel,
-  TabPanels,
-} from '@headlessui/react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { useEffect, useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
+import { bcs } from '@mysten/sui/bcs';
+import { Dialog, Transition } from '@headlessui/react';
+import { Fragment } from 'react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { useCart } from '@/contexts/CartContext';
-import { useFollowSeller, useFavoriteProduct } from '@/hooks/useSocialFeatures';
-import { HeartIcon } from '@heroicons/react/24/outline';
-import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
+import { useFavoriteProduct, useFollowSeller } from '@/hooks/useSocialFeatures';
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
+
+interface Product {
+  id: string;
+  title: string;
+  description: string;
+  price: string;
+  image_url: string;
+  category: string;
+  seller: string;
+  is_available: boolean;
+  total_sales: string;
+  rating_sum: string;
+  rating_count: string;
+  quantity: number;
+  available_quantity: number;
+  resellable: boolean;
+  file_cid?: string;
+  file_name?: string;
+  file_size?: number;
+}
+
+interface Review {
+  reviewer: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+}
 
 interface ProductDetailModalProps {
   productId: string | null;
@@ -28,43 +44,27 @@ interface ProductDetailModalProps {
   onClose: () => void;
 }
 
-function classNames(...classes: string[]) {
-  return classes.filter(Boolean).join(' ');
-}
-
-export default function ProductDetailModal({
-  productId,
-  isOpen,
-  onClose,
-}: ProductDetailModalProps) {
+export default function ProductDetailModal({ productId, isOpen, onClose }: ProductDetailModalProps) {
   const account = useCurrentAccount();
-  const { addToCart } = useCart();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
-
-  const [product, setProduct] = useState<any>(null);
+  
+  const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState(0);
-  const [reviewText, setReviewText] = useState('');
-  const [rating, setRating] = useState(0);
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
   const [hasPurchased, setHasPurchased] = useState(false);
 
-  const { isFavorited, loading: favoriteLoading, toggleFavorite } = useFavoriteProduct(
-    productId,
-    account?.address
-  );
-  const { isFollowing, loading: followLoading, toggleFollow } = useFollowSeller(
-    product?.seller,
-    account?.address
-  );
+  const { isFavorited, toggleFavorite } = useFavoriteProduct(productId || '', account?.address);
+  const { isFollowing, toggleFollow } = useFollowSeller(product?.seller || '', account?.address);
 
   useEffect(() => {
-    if (isOpen && productId) {
+    if (productId && isOpen) {
       fetchProduct();
       fetchReviews();
       checkPurchaseStatus();
     }
-  }, [isOpen, productId, account]);
+  }, [productId, isOpen, account]);
 
   const fetchProduct = async () => {
     if (!productId) return;
@@ -81,25 +81,6 @@ export default function ProductDetailModal({
     }
   };
 
-  const handleDownload = async () => {
-    if (!account?.address || !product) return;
-    try {
-      const response = await fetch(
-        `http://localhost:4000/api/download/${product.id}/${account.address}`
-      );
-      if (!response.ok) {
-        const error = await response.json();
-        toast.error(error.error || 'Download failed');
-        return;
-      }
-      const data = await response.json();
-      window.open(data.url, '_blank');
-      toast.success('Download started! 📥');
-    } catch (error: any) {
-      toast.error(`Download error: ${error.message}`);
-    }
-  };
-
   const fetchReviews = async () => {
     if (!productId) return;
     try {
@@ -112,419 +93,325 @@ export default function ProductDetailModal({
   };
 
   const checkPurchaseStatus = async () => {
-    if (!productId || !account?.address) return;
+    if (!account?.address || !productId) return;
     try {
       const response = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
       const data = await response.json();
-      const purchased = data.purchases?.some((p: any) => p.product_id === productId);
+      const purchased = data.purchases.some((p: any) => p.product_id === productId);
       setHasPurchased(purchased);
     } catch (error) {
-      console.error('Error checking purchase:', error);
+      console.error('Error checking purchase status:', error);
     }
   };
 
-  const handleReviewSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!account) { toast.error('Please connect your wallet'); return; }
-    if (!rating) { toast.error('Please select a rating'); return; }
-    if (!hasPurchased) { toast.error('You must purchase this product before reviewing'); return; }
+  const handlePurchase = () => {
+    if (!account || !product) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    if (product.seller === account.address) {
+      toast.error('You cannot buy your own product');
+      return;
+    }
+
+    const tx = new Transaction();
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure(bcs.u64().serialize(product.price).toBytes())]);
+
+    tx.moveCall({
+      target: `${PACKAGE_ID}::marketplace::purchase_product`,
+      arguments: [
+        tx.object(MARKETPLACE_ID),
+        tx.object(product.id),
+        coin,
+        tx.object('0x6'),
+      ],
+    });
+
+    signAndExecuteTransaction(
+      { transaction: tx },
+      {
+        onSuccess: () => {
+          toast.success('Purchase successful! 🎉');
+          onClose();
+        },
+        onError: (error) => {
+          console.error('Purchase failed:', error);
+          toast.error('Purchase failed');
+        },
+      }
+    );
+  };
+
+  const handleReviewSubmit = async () => {
+    if (!account?.address || !product) return;
 
     try {
       const response = await fetch('http://localhost:4000/api/reviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productId,
-          buyerAddress: account.address,
-          rating,
-          comment: reviewText,
+          product_id: product.id,
+          reviewer: account.address,
+          rating: reviewRating,
+          comment: reviewComment,
         }),
       });
+
       if (response.ok) {
         toast.success('Review submitted! ⭐');
-        setReviewText('');
-        setRating(0);
+        setReviewComment('');
+        setReviewRating(5);
         fetchReviews();
-        fetchProduct();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to submit review');
       }
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
+    } catch (error) {
+      toast.error('Failed to submit review');
     }
   };
 
-  const handlePurchase = async () => {
-    if (!account || !product) { toast.error('Please connect your wallet'); return; }
-    if (product.seller === account.address) { toast.error('You cannot buy your own product'); return; }
+  const handleDownload = async () => {
+    if (!account?.address || !product) return;
 
-    setLoading(true);
     try {
-      const tx = new Transaction();
-      const priceWithFee = Math.floor(Number(product.price) * 1.02);
-      const [coin] = tx.splitCoins(tx.gas, [priceWithFee]);
-      tx.moveCall({
-        target: `${PACKAGE_ID}::marketplace::purchase_product`,
-        arguments: [
-          tx.object(MARKETPLACE_ID),
-          tx.object(product.id),
-          coin,
-          tx.object('0x6'),
-        ],
-      });
-
-      signAndExecuteTransaction(
-        { transaction: tx },
-        {
-          onSuccess: (result) => {
-            toast.success('Purchase successful! 🎉');
-            onClose();
-            setTimeout(fetchProduct, 2000);
-          },
-          onError: (error) => {
-            toast.error(`Purchase failed: ${error.message}`);
-            setLoading(false);
-          },
-        }
+      const response = await fetch(
+        `http://localhost:4000/api/download/${product.id}/${account.address}`
       );
+
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.error || 'Download failed');
+        return;
+      }
+
+      const data = await response.json();
+      window.open(data.url, '_blank');
+      toast.success('Download started! 📥');
     } catch (error: any) {
-      toast.error(`Purchase failed: ${error.message}`);
-      setLoading(false);
+      toast.error(`Download error: ${error.message}`);
     }
   };
-
-  const handleAddToCart = () => {
-    if (!product) return;
-    addToCart({
-      id: product.id,
-      title: product.title,
-      price: product.price,
-      imageUrl: product.image_url,
-      category: product.category,
-      seller: product.seller,
-    });
-    toast.success('Added to cart! 🛒');
-  };
-
-  // Loading state
-  if (!product && loading) {
-    return (
-      <Dialog open={isOpen} onClose={onClose} className="relative z-50">
-        <DialogBackdrop
-          transition
-          className="fixed inset-0 bg-gray-500/75 transition duration-300 ease-out data-[closed]:opacity-0"
-        />
-        <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <DialogPanel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-center shadow-xl transition-all sm:w-full sm:max-w-lg sm:p-6">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent" />
-              <p className="mt-2 text-gray-600">Loading product...</p>
-            </DialogPanel>
-          </div>
-        </div>
-      </Dialog>
-    );
-  }
 
   if (!product) return null;
 
-  const tabs = ['Details', 'Reviews'];
-
   return (
-    <Dialog
-      open={isOpen}
-      onClose={onClose}
-      transition
-      className="relative z-50 transition duration-300 ease-out data-[closed]:opacity-0"
-    >
-      {/* Backdrop */}
-      <DialogBackdrop
-        transition
-        className="fixed inset-0 bg-gray-500/75 transition duration-300 ease-out data-[closed]:opacity-0"
-      />
+    <Transition appear show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={onClose}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
+        </Transition.Child>
 
-      <div className="fixed inset-0 z-10 overflow-y-auto">
-        <div className="flex min-h-full items-center justify-center p-4 sm:p-0">
-          <DialogPanel
-            transition
-            className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all duration-300 ease-out data-[closed]:opacity-0 data-[closed]:translate-y-4 sm:data-[closed]:translate-y-0 sm:data-[closed]:scale-95 sm:my-8 w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto"
-          >
-            <div className="absolute right-2 top-2 sm:right-4 sm:top-4 z-10">
-              <button
-                type="button"
-                className="rounded-md bg-white text-gray-400 hover:text-gray-500 p-2 shadow-lg"
-                onClick={onClose}
-              >
-                <span className="sr-only">Close</span>
-                <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-              </button>
-            </div>
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-5xl transform overflow-hidden rounded-2xl bg-white shadow-2xl transition-all">
+                <div className="relative">
+                  {/* Close Button */}
+                  <button
+                    onClick={onClose}
+                    className="absolute right-4 top-4 z-10 rounded-full bg-white/90 p-2 text-gray-500 hover:bg-white hover:text-gray-700 transition-all shadow-lg"
+                  >
+                    <XMarkIcon className="h-6 w-6" />
+                  </button>
 
-            <div className="flex flex-col sm:flex-row">
-              {/* Product Image */}
-              <div className="w-full sm:w-1/2">
-                <img
-                  src={product.image_url}
-                  alt={product.title}
-                  className="w-full h-64 sm:h-96 object-cover"
-                />
-              </div>
-
-              {/* Product Info */}
-              <div className="w-full sm:w-1/2 p-4 sm:p-6">
-                <div className="mb-4">
-                  <DialogTitle as="h3" className="text-2xl font-bold leading-6 text-gray-900">
-                    {product.title}
-                  </DialogTitle>
-
-                  <div className="mt-2">
-                    <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                      {product.category}
-                    </span>
-                  </div>
-
-                  <div className="mt-4">
-                    <span className="text-3xl font-bold text-indigo-600">
-                      {(Number(product.price) / 1e9).toFixed(2)}
-                    </span>
-                    <span className="text-lg text-gray-500 ml-2">SUI</span>
-                  </div>
-
-                  {Number(product.rating_count) > 0 && (
-                    <div className="mt-2 flex items-center">
-                      <span className="text-yellow-500">
-                        {'⭐'.repeat(Math.round(Number(product.rating_sum) / Number(product.rating_count)))}
-                      </span>
-                      <span className="ml-2 text-sm text-gray-600">
-                        ({product.rating_count} reviews)
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium text-gray-900">Seller</h4>
-                        <p className="mt-1 text-xs text-gray-500 font-mono break-all">
-                          {product.seller}
-                        </p>
-                      </div>
-                      {account && account.address !== product.seller && (
-                        <button
-                          onClick={toggleFollow}
-                          disabled={followLoading}
-                          className={`ml-2 px-3 py-1 rounded text-xs font-semibold transition-colors ${
-                            isFollowing
-                              ? 'bg-gray-200 text-gray-700'
-                              : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                          }`}
-                        >
-                          {isFollowing ? 'Following' : '+ Follow'}
-                        </button>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+                    {/* Left: Image */}
+                    <div className="relative bg-gradient-to-br from-gray-100 to-gray-200">
+                      <img
+                        src={product.image_url}
+                        alt={product.title}
+                        className="w-full h-[500px] object-cover"
+                      />
+                      {product.resellable && (
+                        <div className="absolute top-4 left-4 bg-purple-600 text-white px-4 py-2 rounded-full font-semibold shadow-lg flex items-center gap-2">
+                          🔄 Resellable NFT
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
 
-                {/* Tabs — v2 named exports: TabGroup, TabList, Tab, TabPanels, TabPanel */}
-                <TabGroup selectedIndex={activeTab} onChange={setActiveTab}>
-                  <TabList className="flex space-x-1 rounded-xl bg-gray-100 p-1">
-                    {tabs.map((tab) => (
-                      <Tab
-                        key={tab}
-                        className={({ selected }) =>
-                          classNames(
-                            'w-full rounded-lg py-2.5 text-sm font-medium leading-5',
-                            'ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2',
-                            selected
-                              ? 'bg-white text-indigo-700 shadow'
-                              : 'text-gray-700 hover:bg-white/[0.12] hover:text-indigo-600'
-                          )
-                        }
-                      >
-                        {tab}
-                      </Tab>
-                    ))}
-                  </TabList>
+                    {/* Right: Details */}
+                    <div className="p-8 flex flex-col">
+                      <div className="flex-1">
+                        <Dialog.Title className="text-3xl font-bold text-gray-900 mb-3">
+                          {product.title}
+                        </Dialog.Title>
 
-                  <TabPanels className="mt-4 max-h-64 overflow-y-auto">
-                    {/* Details */}
-                    <TabPanel className="rounded-xl bg-white p-3">
-                      <p className="text-sm text-gray-700">{product.description}</p>
-                      <div className="mt-4 space-y-2 text-sm text-gray-600">
-                        <p><strong>Sales:</strong> {product.total_sales}</p>
-                        <p>
-                          <strong>Status:</strong>{' '}
-                          {product.is_available ? (
-                            <span className="text-green-600 font-semibold">Available</span>
-                          ) : (
-                            <span className="text-red-600 font-semibold">Sold Out</span>
-                          )}
-                        </p>
-                      </div>
-                    </TabPanel>
-
-                    {/* Reviews */}
-                    <TabPanel className="rounded-xl bg-white p-3">
-                      <div className="space-y-6">
-                        {account && hasPurchased && (
-                          <form onSubmit={handleReviewSubmit} className="bg-gray-50 rounded-lg p-4">
-                            <h4 className="font-semibold text-gray-900 mb-3">Write a Review</h4>
-                            <div className="mb-3">
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Your Rating *
-                              </label>
-                              <div className="flex gap-2">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <button
-                                    key={star}
-                                    type="button"
-                                    onClick={() => setRating(star)}
-                                    className="text-2xl focus:outline-none"
-                                  >
-                                    {star <= rating ? '⭐' : '☆'}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="mb-3">
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Your Review (Optional)
-                              </label>
-                              <textarea
-                                value={reviewText}
-                                onChange={(e) => setReviewText(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                                placeholder="Share your experience with this product..."
-                              />
-                            </div>
-                            <button
-                              type="submit"
-                              className="w-full bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-500"
-                            >
-                              Submit Review
-                            </button>
-                          </form>
-                        )}
-
-                        {account && !hasPurchased && (
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                            <p className="text-sm text-yellow-800">
-                              You must purchase this product before leaving a review.
-                            </p>
-                          </div>
-                        )}
-
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-3">
-                            Customer Reviews ({reviews.length})
-                          </h4>
-                          {reviews.length === 0 ? (
-                            <p className="text-gray-500 text-center py-8">
-                              No reviews yet. Be the first to review!
-                            </p>
-                          ) : (
-                            <div className="space-y-4">
-                              {reviews.map((review) => (
-                                <div
-                                  key={`${review.product_id}-${review.reviewer}-${review.created_at}`}
-                                  className="border-b border-gray-200 pb-4 last:border-b-0"
-                                >
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                      <div className="text-yellow-500">{'⭐'.repeat(review.rating)}</div>
-                                      <span className="text-sm text-gray-600 font-mono">
-                                        {review.reviewer.slice(0, 6)}...{review.reviewer.slice(-4)}
-                                      </span>
-                                    </div>
-                                    <span className="text-xs text-gray-500">
-                                      {new Date(Number(review.created_at) * 1000).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                  {review.comment && (
-                                    <p className="text-sm text-gray-700">{review.comment}</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                        <div className="flex items-center gap-3 mb-4">
+                          <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-medium">
+                            {product.category}
+                          </span>
+                          {product.quantity > 1 && (
+                            <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-medium">
+                              {product.available_quantity}/{product.quantity} Available
+                            </span>
                           )}
                         </div>
+
+                        <p className="text-gray-600 mb-6 leading-relaxed">{product.description}</p>
+
+                        {/* Price */}
+                        <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100">
+                          <div className="text-sm text-gray-600 mb-1">Price</div>
+                          <div className="text-4xl font-bold text-indigo-600">
+                            {(Number(product.price) / 1e9).toFixed(2)} SUI
+                          </div>
+                        </div>
+
+                        {/* Seller Info */}
+                        <div className="mb-6 p-4 bg-gray-50 rounded-xl">
+                          <div className="text-xs text-gray-500 mb-1">Seller</div>
+                          <div className="text-sm font-mono text-gray-800">
+                            {product.seller.slice(0, 8)}...{product.seller.slice(-6)}
+                          </div>
+                        </div>
+
+                        {/* Reviews Summary */}
+                        {Number(product.rating_count) > 0 && (
+                          <div className="mb-6 flex items-center gap-2">
+                            <div className="flex">
+                              {[...Array(5)].map((_, i) => (
+                                <span key={i} className="text-yellow-400 text-xl">
+                                  {i < Math.round(Number(product.rating_sum) / Number(product.rating_count)) ? '★' : '☆'}
+                                </span>
+                              ))}
+                            </div>
+                            <span className="text-sm text-gray-600">
+                              ({product.rating_count} reviews)
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    </TabPanel>
-                  </TabPanels>
-                </TabGroup>
 
-                {/* Actions */}
-                <div className="mt-6">
-                  {product.is_available ? (
-                    <div className="space-y-3">
-                      {account && (
-                        <button
-                          type="button"
-                          onClick={toggleFavorite}
-                          disabled={favoriteLoading}
-                          className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center justify-center gap-2"
-                        >
-                          {isFavorited ? (
-                            <><HeartIconSolid className="h-5 w-5 text-red-500" />Remove from Favorites</>
-                          ) : (
-                            <><HeartIcon className="h-5 w-5" />Add to Favorites</>
-                          )}
-                        </button>
+                      {/* Action Buttons */}
+                      <div className="space-y-3 pt-4 border-t">
+                        {product.seller === account?.address ? (
+                          <button
+                            disabled
+                            className="w-full bg-gray-300 text-gray-600 py-4 rounded-xl font-bold cursor-not-allowed"
+                          >
+                            Your Product
+                          </button>
+                        ) : product.is_available ? (
+                          <button
+                            onClick={handlePurchase}
+                            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                          >
+                            Buy Now
+                          </button>
+                        ) : (
+                          <button
+                            disabled
+                            className="w-full bg-gray-300 text-gray-600 py-4 rounded-xl font-bold cursor-not-allowed"
+                          >
+                            Sold Out
+                          </button>
+                        )}
+
+                        {/* Download Button */}
+                        {hasPurchased && product.file_cid && (
+                          <button
+                            onClick={handleDownload}
+                            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 rounded-xl font-bold hover:from-green-500 hover:to-emerald-500 transition-all shadow-lg flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download File
+                          </button>
+                        )}
+
+                        {/* Social Actions */}
+                        {account && product.seller !== account.address && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              onClick={() => toggleFavorite()}
+                              className="border-2 border-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:border-pink-500 hover:text-pink-500 transition-all"
+                            >
+                              {isFavorited ? '❤️ Saved' : '🤍 Save'}
+                            </button>
+                            <button
+                              onClick={() => toggleFollow()}
+                              className="border-2 border-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:border-indigo-500 hover:text-indigo-500 transition-all"
+                            >
+                              {isFollowing ? '✓ Following' : '+ Follow'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Reviews Section */}
+                      {hasPurchased && (
+                        <div className="mt-6 pt-6 border-t">
+                          <h3 className="font-bold text-lg mb-3">Leave a Review</h3>
+                          <div className="flex gap-1 mb-3">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onClick={() => setReviewRating(star)}
+                                className="text-3xl transition-transform hover:scale-110"
+                              >
+                                {star <= reviewRating ? '⭐' : '☆'}
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            value={reviewComment}
+                            onChange={(e) => setReviewComment(e.target.value)}
+                            placeholder="Share your experience..."
+                            className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:outline-none resize-none"
+                            rows={3}
+                          />
+                          <button
+                            onClick={handleReviewSubmit}
+                            className="mt-3 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-500 transition-colors font-semibold"
+                          >
+                            Submit Review
+                          </button>
+                        </div>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={handlePurchase}
-                        disabled={!account || product.seller === account?.address || loading}
-                        className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      >
-                        {!account
-                          ? 'Connect Wallet to Purchase'
-                          : product.seller === account?.address
-                          ? 'This is Your Product'
-                          : loading
-                          ? 'Processing...'
-                          : `💳 Buy Now - ${(Number(product.price) / 1e9).toFixed(2)} SUI`}
-                      </button>
-
-                      {account && product.seller !== account?.address && (
-                        <button
-                          type="button"
-                          onClick={handleAddToCart}
-                          className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-indigo-600 hover:bg-indigo-50"
-                        >
-                          🛒 Add to Cart
-                        </button>
-                      )}
-
-                      {hasPurchased && product.file_cid && (
-                        <button
-                          onClick={handleDownload}
-                          className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-500 transition-colors flex items-center justify-center gap-2"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                          Download File
-                        </button>
+                      {/* Reviews List */}
+                      {reviews.length > 0 && (
+                        <div className="mt-6 pt-6 border-t max-h-64 overflow-y-auto">
+                          <h3 className="font-bold text-lg mb-3">Reviews ({reviews.length})</h3>
+                          <div className="space-y-3">
+                            {reviews.map((review, idx) => (
+                              <div key={idx} className="bg-gray-50 p-4 rounded-xl">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-yellow-500 text-sm">{'⭐'.repeat(review.rating)}</span>
+                                  <span className="text-xs text-gray-500">
+                                    {new Date(review.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-700">{review.comment}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  ) : (
-                    <div className="rounded-md bg-red-50 p-4">
-                      <p className="text-sm text-red-800 text-center font-semibold">
-                        This product is no longer available
-                      </p>
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
-          </DialogPanel>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
         </div>
-      </div>
-    </Dialog>
+      </Dialog>
+    </Transition>
   );
 }

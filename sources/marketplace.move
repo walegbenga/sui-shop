@@ -30,8 +30,8 @@ module sui_commerce::marketplace {
     const EInvalidQuantity: u64 = 10;
 
     // ======== Constants ========
-    const PLATFORM_FEE_BPS: u64 = 200; // 2% platform fee (200 basis points)
-    const MAX_FEE_BPS: u64 = 10000; // 100% in basis points
+    const PLATFORM_FEE_BPS: u64 = 200;
+    const MAX_FEE_BPS: u64 = 10000;
     const MIN_RATING: u8 = 1;
     const MAX_RATING: u8 = 5;
     const MAX_DESCRIPTION_LENGTH: u64 = 1000;
@@ -39,33 +39,29 @@ module sui_commerce::marketplace {
 
     // ======== Structs ========
 
-    /// Platform admin capability - one-time witness pattern
-    struct MARKETPLACE has drop {}
+    public struct MARKETPLACE has drop {}
 
-    /// Platform configuration and treasury
-    struct Platform has key {
+    public struct Platform has key {
         id: UID,
         admin: address,
         treasury: Balance<SUI>,
         total_sales: u64,
         total_products: u64,
-        platform_fee_bps: u64, // Basis points (200 = 2%)
+        platform_fee_bps: u64,
     }
 
-    /// Seller profile with reputation tracking
-    struct SellerProfile has key, store {
+    public struct SellerProfile has key, store {
         id: UID,
         owner: address,
         display_name: String,
         total_sales: u64,
         total_reviews: u64,
-        average_rating: u64, // Stored as rating * 100 to avoid decimals
+        average_rating: u64,
         created_at: u64,
         is_verified: bool,
     }
 
-    /// Product object - core marketplace item
-    struct Product has key, store {
+    public struct Product has key, store {
         id: UID,
         seller: address,
         name: String,
@@ -77,13 +73,13 @@ module sui_commerce::marketplace {
         created_at: u64,
         updated_at: u64,
         category: String,
-        // Reviews stored as dynamic fields
         review_count: u64,
-        total_rating_sum: u64, // Sum of all ratings for average calculation
+        total_rating_sum: u64,
+        resellable: bool,
+        file_cid: String,
     }
 
-    /// Review object stored as dynamic field
-    struct Review has store, drop {
+    public struct Review has store, drop {
         reviewer: address,
         rating: u8,
         comment: String,
@@ -91,8 +87,7 @@ module sui_commerce::marketplace {
         verified_purchase: bool,
     }
 
-    /// Purchase receipt - proof of purchase
-    struct PurchaseReceipt has key, store {
+    public struct PurchaseReceipt has key, store {
         id: UID,
         product_id: ID,
         buyer: address,
@@ -103,26 +98,25 @@ module sui_commerce::marketplace {
         timestamp: u64,
     }
 
-    /// Buyer badge - evolves based on purchase history
-    struct BuyerBadge has key, store {
+    public struct BuyerBadge has key, store {
         id: UID,
         owner: address,
         total_purchases: u64,
         total_spent: u64,
         member_since: u64,
-        tier: u8, // 0=Bronze, 1=Silver, 2=Gold, 3=Platinum
+        tier: u8,
     }
 
     // ======== Events ========
 
-    struct ProductListed has copy, drop {
+    public struct ProductListed has copy, drop {
         product_id: ID,
         seller: address,
         price: u64,
         timestamp: u64,
     }
 
-    struct ProductPurchased has copy, drop {
+    public struct ProductPurchased has copy, drop {
         product_id: ID,
         buyer: address,
         seller: address,
@@ -132,21 +126,20 @@ module sui_commerce::marketplace {
         timestamp: u64,
     }
 
-    struct ProductReviewed has copy, drop {
+    public struct ProductReviewed has copy, drop {
         product_id: ID,
         reviewer: address,
         rating: u8,
         timestamp: u64,
     }
 
-    struct SellerProfileCreated has copy, drop {
+    public struct SellerProfileCreated has copy, drop {
         seller: address,
         timestamp: u64,
     }
 
     // ======== Initialization ========
 
-    /// Initialize platform (called once on module publish)
     fun init(witness: MARKETPLACE, ctx: &mut TxContext) {
         let platform = Platform {
             id: object::new(ctx),
@@ -161,7 +154,6 @@ module sui_commerce::marketplace {
 
     // ======== Seller Functions ========
 
-    /// Create seller profile - required before listing products
     public entry fun create_seller_profile(
         display_name: vector<u8>,
         clock: &Clock,
@@ -186,7 +178,6 @@ module sui_commerce::marketplace {
         transfer::transfer(profile, tx_context::sender(ctx));
     }
 
-    /// List a new product for sale
     public entry fun list_product(
         platform: &mut Platform,
         name: vector<u8>,
@@ -194,17 +185,18 @@ module sui_commerce::marketplace {
         price: u64,
         quantity: u64,
         category: vector<u8>,
+        resellable: bool,
+        file_cid: vector<u8>,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        // Security: Validate inputs
         assert!(price > 0, EInvalidPrice);
         assert!(quantity > 0, EInvalidQuantity);
         assert!(vector::length(&description) <= MAX_DESCRIPTION_LENGTH, EInvalidQuantity);
 
         let product_id = object::new(ctx);
         let product_id_copy = object::uid_to_inner(&product_id);
-        
+
         let product = Product {
             id: product_id,
             seller: tx_context::sender(ctx),
@@ -219,9 +211,10 @@ module sui_commerce::marketplace {
             category: string::utf8(category),
             review_count: 0,
             total_rating_sum: 0,
+            resellable,
+            file_cid: string::utf8(file_cid),
         };
 
-        // Update platform stats
         platform.total_products = platform.total_products + 1;
 
         event::emit(ProductListed {
@@ -234,7 +227,6 @@ module sui_commerce::marketplace {
         transfer::share_object(product);
     }
 
-    /// Update product details (only seller can modify)
     public entry fun update_product(
         product: &mut Product,
         new_price: u64,
@@ -243,7 +235,6 @@ module sui_commerce::marketplace {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        // Security: Access control
         assert!(product.seller == tx_context::sender(ctx), ENotProductOwner);
         assert!(new_price > 0, EInvalidPrice);
         assert!(vector::length(&new_description) <= MAX_DESCRIPTION_LENGTH, EInvalidQuantity);
@@ -254,19 +245,16 @@ module sui_commerce::marketplace {
         product.updated_at = clock::timestamp_ms(clock);
     }
 
-    /// Deactivate product listing
     public entry fun deactivate_product(
         product: &mut Product,
         ctx: &mut TxContext
     ) {
-        // Security: Only seller can deactivate
         assert!(product.seller == tx_context::sender(ctx), ENotProductOwner);
         product.is_active = false;
     }
 
     // ======== Buyer Functions ========
 
-    /// Purchase a product with secure payment handling
     public entry fun purchase_product(
         platform: &mut Platform,
         product: &mut Product,
@@ -275,32 +263,23 @@ module sui_commerce::marketplace {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        // Security: Validate product state
         assert!(product.is_active, EProductNotForSale);
         assert!(product.quantity_available >= quantity, EProductSoldOut);
         assert!(quantity > 0, EInvalidQuantity);
 
         let total_price = product.price * quantity;
         let payment_amount = coin::value(&payment);
-        
-        // Security: Exact payment required (prevents overpayment attacks)
         assert!(payment_amount == total_price, EInsufficientPayment);
 
-        // Calculate platform fee securely
         let platform_fee = calculate_fee(total_price, platform.platform_fee_bps);
         assert!(platform_fee <= total_price, EPlatformFeeOverflow);
-        
-        let seller_amount = total_price - platform_fee;
 
-        // Split payment securely
-        let payment_balance = coin::into_balance(payment);
+        let mut payment_balance = coin::into_balance(payment);
         let fee_balance = balance::split(&mut payment_balance, platform_fee);
-        
-        // Update platform treasury
+
         balance::join(&mut platform.treasury, fee_balance);
         platform.total_sales = platform.total_sales + 1;
 
-        // Pay seller
         let seller_coin = coin::from_balance(payment_balance, ctx);
         transfer::public_transfer(seller_coin, product.seller);
 
@@ -308,7 +287,11 @@ module sui_commerce::marketplace {
         product.quantity_available = product.quantity_available - quantity;
         product.total_sold = product.total_sold + quantity;
 
-        // Create purchase receipt
+        // Mark inactive if sold out
+        if (product.quantity_available == 0) {
+            product.is_active = false;
+        };
+
         let receipt = PurchaseReceipt {
             id: object::new(ctx),
             product_id: object::uid_to_inner(&product.id),
@@ -333,7 +316,6 @@ module sui_commerce::marketplace {
         transfer::transfer(receipt, tx_context::sender(ctx));
     }
 
-    /// Leave a review for a product (with purchase verification)
     public entry fun review_product(
         product: &mut Product,
         receipt: &PurchaseReceipt,
@@ -342,20 +324,15 @@ module sui_commerce::marketplace {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        // Security: Validate inputs
         assert!(rating >= MIN_RATING && rating <= MAX_RATING, EInvalidRating);
         assert!(vector::length(&comment) <= MAX_REVIEW_LENGTH, EInvalidQuantity);
-        
+
         let reviewer = tx_context::sender(ctx);
-        
-        // Security: Cannot review own product
+
         assert!(reviewer != product.seller, ESelfReview);
-        
-        // Security: Must be verified purchase
         assert!(receipt.product_id == object::uid_to_inner(&product.id), EUnauthorized);
         assert!(receipt.buyer == reviewer, EUnauthorized);
 
-        // Security: Check if already reviewed (using dynamic field)
         let review_key = reviewer;
         assert!(!df::exists_(&product.id, review_key), EAlreadyReviewed);
 
@@ -367,10 +344,8 @@ module sui_commerce::marketplace {
             verified_purchase: true,
         };
 
-        // Store review as dynamic field
         df::add(&mut product.id, review_key, review);
 
-        // Update product rating stats
         product.review_count = product.review_count + 1;
         product.total_rating_sum = product.total_rating_sum + (rating as u64);
 
@@ -382,7 +357,6 @@ module sui_commerce::marketplace {
         });
     }
 
-    /// Create or upgrade buyer badge
     public entry fun create_buyer_badge(
         clock: &Clock,
         ctx: &mut TxContext
@@ -393,12 +367,11 @@ module sui_commerce::marketplace {
             total_purchases: 0,
             total_spent: 0,
             member_since: clock::timestamp_ms(clock),
-            tier: 0, // Bronze
+            tier: 0,
         };
         transfer::transfer(badge, tx_context::sender(ctx));
     }
 
-    /// Update buyer badge after purchase (called internally or by trusted system)
     public fun update_buyer_badge(
         badge: &mut BuyerBadge,
         amount_spent: u64,
@@ -406,46 +379,40 @@ module sui_commerce::marketplace {
         badge.total_purchases = badge.total_purchases + 1;
         badge.total_spent = badge.total_spent + amount_spent;
 
-        // Upgrade tier based on spending
-        if (badge.total_spent >= 10000000) { // 10 SUI
-            badge.tier = 3; // Platinum
-        } else if (badge.total_spent >= 5000000) { // 5 SUI
-            badge.tier = 2; // Gold
-        } else if (badge.total_spent >= 1000000) { // 1 SUI
-            badge.tier = 1; // Silver
+        if (badge.total_spent >= 10000000) {
+            badge.tier = 3;
+        } else if (badge.total_spent >= 5000000) {
+            badge.tier = 2;
+        } else if (badge.total_spent >= 1000000) {
+            badge.tier = 1;
         };
     }
 
     // ======== Admin Functions ========
 
-    /// Withdraw platform fees (admin only)
     public entry fun withdraw_fees(
         platform: &mut Platform,
         amount: u64,
         ctx: &mut TxContext
     ) {
-        // Security: Admin-only function
         assert!(platform.admin == tx_context::sender(ctx), EUnauthorized);
-        
+
         let withdrawn = balance::split(&mut platform.treasury, amount);
         let coin = coin::from_balance(withdrawn, ctx);
         transfer::public_transfer(coin, platform.admin);
     }
 
-    /// Update platform fee (admin only)
     public entry fun update_platform_fee(
         platform: &mut Platform,
         new_fee_bps: u64,
         ctx: &mut TxContext
     ) {
-        // Security: Admin-only and validate fee range
         assert!(platform.admin == tx_context::sender(ctx), EUnauthorized);
         assert!(new_fee_bps <= MAX_FEE_BPS, EPlatformFeeOverflow);
-        
+
         platform.platform_fee_bps = new_fee_bps;
     }
 
-    /// Verify seller (admin only) - gives credibility boost
     public entry fun verify_seller(
         platform: &Platform,
         profile: &mut SellerProfile,
@@ -457,9 +424,7 @@ module sui_commerce::marketplace {
 
     // ======== Helper Functions ========
 
-    /// Calculate fee with overflow protection
     fun calculate_fee(amount: u64, fee_bps: u64): u64 {
-        // Security: Use checked arithmetic to prevent overflow
         let fee = (amount * fee_bps) / MAX_FEE_BPS;
         assert!(fee <= amount, EPlatformFeeOverflow);
         fee
@@ -467,7 +432,6 @@ module sui_commerce::marketplace {
 
     // ======== View Functions ========
 
-    /// Get product average rating
     public fun get_product_rating(product: &Product): u64 {
         if (product.review_count == 0) {
             return 0
@@ -475,7 +439,6 @@ module sui_commerce::marketplace {
         product.total_rating_sum / product.review_count
     }
 
-    /// Get product details
     public fun get_product_details(product: &Product): (address, u64, u64, bool, u64) {
         (
             product.seller,
@@ -486,7 +449,6 @@ module sui_commerce::marketplace {
         )
     }
 
-    /// Get seller stats
     public fun get_seller_stats(profile: &SellerProfile): (u64, u64, bool) {
         (
             profile.total_sales,
