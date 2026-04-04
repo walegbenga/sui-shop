@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
+import { bcs } from '@mysten/sui/bcs';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useFavoriteProduct, useFollowSeller } from '@/hooks/useSocialFeatures';
-import { useCart } from '@/contexts/CartContext';
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
@@ -47,7 +47,6 @@ interface ProductDetailModalProps {
 export default function ProductDetailModal({ productId, isOpen, onClose }: ProductDetailModalProps) {
   const account = useCurrentAccount();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
-  const { addToCart } = useCart();
   
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,8 +104,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
     }
   };
 
-  // ✅ QUICK BUY - IMMEDIATE PURCHASE
-  const handleQuickBuy = () => {
+  const handlePurchase = () => {
   if (!account || !product) {
     toast.error('Please connect your wallet');
     return;
@@ -122,85 +120,39 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
     return;
   }
 
-  if (product.available_quantity <= 0) {
-    toast.error('Product out of stock');
-    return;
-  }
-
-  // ✅ CHECK IF USER HAS ENOUGH BALANCE
-  const priceInSui = Number(product.price) / 1e9;
-  toast.loading(`Purchasing for ${priceInSui.toFixed(2)} SUI...`, { id: 'purchase' });
-
   const tx = new Transaction();
   
-  try {
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(product.price))]);
+  // Split coins for payment
+  const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(product.price))]);
 
-    tx.moveCall({
-      target: `${PACKAGE_ID}::marketplace::purchase_product`,
-      arguments: [
-        tx.object(MARKETPLACE_ID),
-        tx.object(product.id),
-        coin,
-        tx.pure.u64(1n), // quantity
-        tx.object('0x6'), // clock
-      ],
-    });
+  // Call purchase_product with correct arguments
+  tx.moveCall({
+  target: `${PACKAGE_ID}::marketplace::purchase_product`,
+  arguments: [
+    tx.object(MARKETPLACE_ID),       // platform: &mut Platform
+    tx.object(product.id),           // product: &mut Product
+    coin,                            // payment: Coin<SUI>
+    tx.pure.u64(1n),                 // quantity: u64
+    tx.object('0x6'),                // clock: &Clock
+  ],
+});
 
-    signAndExecuteTransaction(
-      { transaction: tx },
-      {
-        onSuccess: (result) => {
-          console.log('Purchase successful:', result);
-          toast.success('Purchase successful! 🎉', { id: 'purchase' });
-          fetchProduct();
-          checkPurchaseStatus();
-        },
-        onError: (error: any) => {
-          console.error('Purchase failed:', error);
-          
-          // ✅ BETTER ERROR MESSAGES
-          let errorMessage = 'Purchase failed';
-          
-          if (error.message?.includes('abort code: 2')) {
-            errorMessage = 'Insufficient balance or product unavailable';
-          } else if (error.message?.includes('abort code: 3')) {
-            errorMessage = 'Product is not active';
-          } else if (error.message?.includes('abort code: 4')) {
-            errorMessage = 'Invalid quantity';
-          } else if (error.message?.includes('InsufficientGas')) {
-            errorMessage = 'Insufficient gas to complete transaction';
-          } else if (error.message) {
-            errorMessage = error.message;
-          }
-          
-          toast.error(errorMessage, { id: 'purchase' });
-        },
-      }
-    );
-  } catch (error: any) {
-    console.error('Transaction build failed:', error);
-    toast.error('Failed to build transaction', { id: 'purchase' });
-  }
+  signAndExecuteTransaction(
+    { transaction: tx },
+    {
+      onSuccess: (result) => {
+        console.log('Purchase successful:', result);
+        toast.success('Purchase successful! 🎉');
+        fetchProduct(); // Refresh product data
+        checkPurchaseStatus(); // Update purchase status
+      },
+      onError: (error) => {
+        console.error('Purchase failed:', error);
+        toast.error(`Purchase failed: ${error.message || 'Unknown error'}`);
+      },
+    }
+  );
 };
-
-  // ✅ ADD TO CART
-  const handleAddToCart = () => {
-    if (!product) return;
-    
-    if (product.seller === account?.address) {
-      toast.error('You cannot buy your own product');
-      return;
-    }
-
-    if (!product.is_available) {
-      toast.error('Product is sold out');
-      return;
-    }
-
-    addToCart(product);
-    toast.success('Added to cart! 🛒');
-  };
 
   const handleReviewSubmit = async () => {
     if (!account?.address || !product) return;
@@ -292,10 +244,10 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                     {/* Left: Image */}
                     <div className="relative bg-gradient-to-br from-gray-100 to-gray-200">
                       <img
-  src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
-  alt={product.title}
-  className="w-full h-[500px] object-cover"
-/>
+                        src={product.image_url}
+                        alt={product.title}
+                        className="w-full h-[500px] object-cover"
+                      />
                       {product.resellable && (
                         <div className="absolute top-4 left-4 bg-purple-600 text-white px-4 py-2 rounded-full font-semibold shadow-lg flex items-center gap-2">
                           🔄 Resellable NFT
@@ -366,23 +318,12 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                             Your Product
                           </button>
                         ) : product.is_available ? (
-                          <>
-                            {/* ✅ QUICK BUY BUTTON */}
-                            <button
-                              onClick={handleQuickBuy}
-                              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                            >
-                              🚀 Quick Buy Now
-                            </button>
-
-                            {/* ✅ ADD TO CART BUTTON */}
-                            <button
-                              onClick={handleAddToCart}
-                              className="w-full bg-white border-2 border-indigo-600 text-indigo-600 py-4 rounded-xl font-bold hover:bg-indigo-50 transition-all"
-                            >
-                              🛒 Add to Cart
-                            </button>
-                          </>
+                          <button
+                            onClick={handlePurchase}
+                            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                          >
+                            Buy Now
+                          </button>
                         ) : (
                           <button
                             disabled

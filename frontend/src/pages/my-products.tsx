@@ -16,9 +16,10 @@ interface Product {
   totalSales: string;
   ratingSum: string;
   ratingCount: string;
-  quantity?: number;              // ✅ ADDED
-  available_quantity?: number;    // ✅ ADDED
-  resellable?: boolean;
+  quantity: number;
+  available_quantity: number;
+  resellable: boolean;
+  file_cid?: string;
 }
 
 export default function MyProducts() {
@@ -35,13 +36,13 @@ export default function MyProducts() {
 
   const fetchProducts = async () => {
     if (!account?.address) return;
-
     setLoading(true);
-
     try {
-      const response = await fetch(`http://localhost:4000/api/sellers/${account.address}/products`);
+      const response = await fetch(
+        `http://localhost:4000/api/sellers/${account.address}/products`
+      );
       const data = await response.json();
-      
+
       const mappedProducts = (data.products || []).map((p: any) => ({
         id: p.id,
         title: p.title,
@@ -54,6 +55,10 @@ export default function MyProducts() {
         totalSales: p.total_sales,
         ratingSum: p.rating_sum,
         ratingCount: p.rating_count,
+        quantity: p.quantity || 0,
+        available_quantity: p.available_quantity || 0,
+        resellable: p.resellable || false,
+        file_cid: p.file_cid || '',
       }));
 
       setProducts(mappedProducts);
@@ -66,9 +71,7 @@ export default function MyProducts() {
   };
 
   const handleDelete = async (productId: string, productTitle: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${productTitle}"?`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete "${productTitle}"?`)) return;
 
     try {
       const response = await fetch(`http://localhost:4000/api/products/${productId}`, {
@@ -108,7 +111,6 @@ export default function MyProducts() {
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">📦 My Products</h1>
         <p className="text-gray-500 mt-1">Manage your listed products</p>
@@ -116,39 +118,25 @@ export default function MyProducts() {
 
       {/* Filter Tabs */}
       <div className="mb-6 flex gap-2">
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            filter === 'all'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-        >
-          All ({products.length})
-        </button>
-        <button
-          onClick={() => setFilter('available')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            filter === 'available'
-              ? 'bg-green-600 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-        >
-          Available ({products.filter((p) => p.isAvailable).length})
-        </button>
-        <button
-          onClick={() => setFilter('sold')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            filter === 'sold'
-              ? 'bg-red-600 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-        >
-          Sold ({products.filter((p) => !p.isAvailable).length})
-        </button>
+        {[
+          { key: 'all', label: `All (${products.length})`, color: 'indigo' },
+          { key: 'available', label: `Available (${products.filter((p) => p.isAvailable).length})`, color: 'green' },
+          { key: 'sold', label: `Sold (${products.filter((p) => !p.isAvailable).length})`, color: 'red' },
+        ].map(({ key, label, color }) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key as any)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filter === key
+                ? `bg-${color}-600 text-white`
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Products List */}
       {loading ? (
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
           <ul className="divide-y divide-gray-200">
@@ -181,15 +169,16 @@ export default function MyProducts() {
               <li key={product.id}>
                 <div className="px-4 py-4 sm:px-6 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center">
-                    {/* Product Image */}
                     <img
-                      src={product.imageUrl}
+                      src={product.imageUrl || 'https://via.placeholder.com/80x80?text=No+Image'}
                       alt={product.title}
                       className="h-20 w-20 rounded-lg object-cover"
                       loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://via.placeholder.com/80x80?text=No+Image';
+                      }}
                     />
 
-                    {/* Product Info */}
                     <div className="ml-4 flex-1">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -200,6 +189,11 @@ export default function MyProducts() {
                           <p className="text-lg font-bold text-indigo-600">
                             {(Number(product.price) / 1e9).toFixed(2)} SUI
                           </p>
+                          {product.quantity > 1 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {product.available_quantity}/{product.quantity} available
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -214,10 +208,15 @@ export default function MyProducts() {
                               ⭐ {(Number(product.ratingSum) / Number(product.ratingCount)).toFixed(1)}
                             </span>
                           )}
+                          {product.resellable && (
+                            <span className="text-purple-600 text-xs font-medium">🔄 Resellable</span>
+                          )}
+                          {product.file_cid && (
+                            <span className="text-green-600 text-xs font-medium">📁 Has File</span>
+                          )}
                         </div>
 
                         <div className="flex items-center space-x-2">
-                          {/* Status Badge */}
                           {product.isAvailable ? (
                             <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-700/10">
                               Available
@@ -228,7 +227,6 @@ export default function MyProducts() {
                             </span>
                           )}
 
-                          {/* Action Buttons */}
                           {product.isAvailable && (
                             <>
                               <Link

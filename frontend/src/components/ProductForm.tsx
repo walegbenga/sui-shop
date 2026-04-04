@@ -5,6 +5,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
 import toast from 'react-hot-toast';
 import LoadingButton from './LoadingButton';
+import { promise } from 'zod';
 
 const CATEGORIES = ['Electronics', 'Fashion', 'Home', 'Sports', 'Books', 'Other'];
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
@@ -160,6 +161,13 @@ export default function ProductForm({ productId }: ProductFormProps) {
         onSuccess: async (result) => {
           console.log('Transaction successful:', result);
           toast.success('Product listed successfully! 🎉');
+
+          // Wait for indexer to process
+          toast.loading('Waiting for Blockchain confirmation....', {id: 'indexer'})
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          toast.dismiss('indexer');
+
+          // Redirect to My Product or Marktplace
           setTimeout(() => {
             router.push('/my-products');
           }, 1500);

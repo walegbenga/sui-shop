@@ -138,7 +138,7 @@ function ProductCard({ product, onPurchase, purchasing, calculateRating }: any) 
       {/* Image */}
       <div className="aspect-square overflow-hidden bg-slate-900/50">
         <img
-          src={product.imageUrl}
+          src={product.image_url}
           alt={product.title}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
         />
@@ -176,7 +176,7 @@ function ProductCard({ product, onPurchase, purchasing, calculateRating }: any) 
             <p className="text-2xl font-bold text-white">{priceInSui.toFixed(4)} <span className="text-sm text-slate-400">SUI</span></p>
           </div>
 
-          {!isOwner && product.isAvailable && (
+          {!isOwner && product.isActive && (
             <button
               onClick={() => onPurchase(product.id, product.price)}
               disabled={purchasing}
@@ -192,7 +192,7 @@ function ProductCard({ product, onPurchase, purchasing, calculateRating }: any) 
             </span>
           )}
 
-          {!product.isAvailable && (
+          {!product.isActive && (
             <span className="px-4 py-2 bg-red-500/20 text-red-300 rounded-xl text-sm font-medium border border-red-500/30">
               Sold Out
             </span>

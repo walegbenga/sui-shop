@@ -1,12 +1,10 @@
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
-import { bcs } from '@mysten/sui/bcs';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
 import * as dotenv from 'dotenv';
 import path from 'path';
 
-// Load .env from backend directory
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const PACKAGE_ID = process.env.PACKAGE_ID;
@@ -14,22 +12,25 @@ const MARKETPLACE_ID = process.env.MARKETPLACE_ID;
 
 if (!PACKAGE_ID || !MARKETPLACE_ID) {
   console.error('❌ Missing PACKAGE_ID or MARKETPLACE_ID in .env');
-  console.log('PACKAGE_ID:', PACKAGE_ID);
-  console.log('MARKETPLACE_ID:', MARKETPLACE_ID);
   process.exit(1);
 }
 
 const client = new SuiClient({ url: getFullnodeUrl('testnet') });
 
-// ✅ PASTE YOUR ACTUAL PRIVATE KEY HERE
-const PRIVATE_KEY = 'suiprivkey1qrluxf5pztplg26x4njyd2zdhdf25z64ph0dfe83x4javkzqevg06gnsx9j'; // Your key from Sui Wallet
+// ✅ REPLACE WITH YOUR ACTUAL PRIVATE KEY
+const PRIVATE_KEY = 'suiprivkey1qrluxf5pztplg26x4njyd2zdhdf25z64ph0dfe83x4javkzqevg06gnsx9j';
+
+if (!PRIVATE_KEY || PRIVATE_KEY.startsWith('suiprivkey1q...')) {
+  console.error('❌ Please add your private key to the script!');
+  process.exit(1);
+}
 
 const { secretKey } = decodeSuiPrivateKey(PRIVATE_KEY);
 const keypair = Ed25519Keypair.fromSecretKey(secretKey);
 
-console.log(`✅ Using address: ${keypair.toSuiAddress()}`);
-console.log(`📦 Package ID: ${PACKAGE_ID}`);
-console.log(`🏪 Marketplace ID: ${MARKETPLACE_ID}`);
+console.log(`✅ Address: ${keypair.toSuiAddress()}`);
+console.log(`📦 Package: ${PACKAGE_ID}`);
+console.log(`🏪 Marketplace: ${MARKETPLACE_ID}`);
 
 const CATEGORIES = ['Electronics', 'Fashion', 'Home', 'Sports', 'Books'];
 
@@ -64,11 +65,11 @@ async function seedProducts() {
 
         const tx = new Transaction();
         
-        // ✅ CORRECT TRANSACTION STRUCTURE
+        // ✅ TYPE ASSERTION TO FIX TYPESCRIPT ERROR
         tx.moveCall({
           target: `${PACKAGE_ID}::marketplace::list_product`,
           arguments: [
-            tx.object(MARKETPLACE_ID),
+            tx.object(MARKETPLACE_ID as string), // ✅ FIXED
             tx.pure.string(name),
             tx.pure.string(product.desc),
             tx.pure.u64(priceInMist),
@@ -80,29 +81,26 @@ async function seedProducts() {
           ],
         });
 
-        const result = await client.signAndExecuteTransaction({
+        await client.signAndExecuteTransaction({
           signer: keypair,
           transaction: tx,
-          options: {
-            showEffects: true,
-          },
+          options: { showEffects: true },
         });
 
         count++;
         console.log(`✅ [${count}/300] ${name} - ${(priceInMist / 1e9).toFixed(2)} SUI`);
         
-        // Wait 1 second between transactions
         await new Promise(r => setTimeout(r, 1000));
       } catch (error: any) {
         failed++;
-        console.error(`❌ Failed [${failed}]:`, error.message);
+        console.error(`❌ [${failed}] ${error.message}`);
       }
     }
   }
 
-  console.log(`\n🎉 Seeding complete!`);
-  console.log(`✅ Successfully created: ${count} products`);
-  console.log(`❌ Failed: ${failed} products`);
+  console.log(`\n🎉 Complete!`);
+  console.log(`✅ Created: ${count}`);
+  console.log(`❌ Failed: ${failed}`);
 }
 
 seedProducts();

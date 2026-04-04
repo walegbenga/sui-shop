@@ -1,0 +1,37 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="100" cy="100" r="95" fill="url(#gradient1)" />
+  
+  <!-- Gradient Definition -->
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#9333EA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#EC4899;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Shopping Bag -->
+  <path d="M 65 80 L 65 160 Q 65 170 75 170 L 125 170 Q 135 170 135 160 L 135 80 Z" 
+        fill="white" opacity="0.9"/>
+  
+  <!-- Bag Handle -->
+  <path d="M 75 80 Q 75 60 100 60 Q 125 60 125 80" 
+        stroke="white" stroke-width="6" fill="none" stroke-linecap="round"/>
+  
+  <!-- Chain Link 1 -->
+  <circle cx="145" cy="100" r="12" fill="none" stroke="white" stroke-width="4"/>
+  
+  <!-- Chain Link 2 -->
+  <circle cx="165" cy="100" r="12" fill="none" stroke="white" stroke-width="4"/>
+  
+  <!-- Digital Pixels Effect -->
+  <rect x="80" y="100" width="8" height="8" fill="white" opacity="0.6"/>
+  <rect x="92" y="100" width="8" height="8" fill="white" opacity="0.4"/>
+  <rect x="104" y="100" width="8" height="8" fill="white" opacity="0.6"/>
+  <rect x="80" y="112" width="8" height="8" fill="white" opacity="0.4"/>
+  <rect x="104" y="112" width="8" height="8" fill="white" opacity="0.4"/>
+  <rect x="80" y="124" width="8" height="8" fill="white" opacity="0.6"/>
+  <rect x="92" y="124" width="8" height="8" fill="white" opacity="0.4"/>
+  <rect x="104" y="124" width="8" height="8" fill="white" opacity="0.6"/>
+</svg>

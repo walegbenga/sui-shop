@@ -294,14 +294,14 @@ export default function Home() {
                 {/* Product Image */}
                 <div className="relative group">
                   <img
-                    src={product.image_url}
-                    alt={product.title}
-                    className="w-full h-48 object-cover rounded-t-lg"
-                    loading="lazy"
-                    onError={(e) => {
-                      e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image';
-                    }}
-                  />
+  src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
+  alt={product.title}
+  className="w-full h-48 object-cover rounded-t-lg"
+  loading="lazy"
+  onError={(e) => {
+    e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image';
+  }}
+/>
                   
                   {/* SOLD Badge */}
                   {!product.is_available && (

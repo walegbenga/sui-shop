@@ -35,6 +35,8 @@ export default function Layout({ children }: LayoutProps) {
     { href: '/favorites', label: 'Favorites', requireAuth: true },
     { href: '/followers', label: 'Followers', requireAuth: true },
     { href: '/following', label: 'Following', requireAuth: true },
+    { href: '/my-purchases', label: 'my-purchases', requireAuth: true },
+    { href: '/profile', label: 'Profile', requireAuth: true },
   ];
 
   return (
@@ -181,7 +183,7 @@ export default function Layout({ children }: LayoutProps) {
                           <div className="space-y-4">
                             {cart.map((item) => (
                               <div key={item.id} className="flex gap-4 border-b border-gray-100 pb-4">
-                                <img src={item.imageUrl} alt={item.title} className="h-20 w-20 object-cover rounded-lg" />
+                                <img src={item.image_url} alt={item.title} className="h-20 w-20 object-cover rounded-lg" />
                                 <div className="flex-1">
                                   <h3 className="font-semibold text-gray-900">{item.title}</h3>
                                   <p className="text-sm text-indigo-600 font-bold mt-1">
