@@ -17,10 +17,11 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const account = useCurrentAccount();
-  const { cart, removeFromCart, clearCart } = useCart();
+  //const { cart, removeFromCart, clearCart } = useCart();
   const [cartOpen, setCartOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const { cart, removeFromCart, clearCart, checkout, itemCount } = useCart();
   const totalPrice = cart.reduce((sum, item) => sum + Number(item.price), 0);
 
   const handleCheckout = () => {
@@ -205,7 +206,7 @@ export default function Layout({ children }: LayoutProps) {
                             <span>Total</span>
                             <span className="text-indigo-600">{(totalPrice / 1e9).toFixed(2)} SUI</span>
                           </div>
-                          <button onClick={handleCheckout} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg">
+                          <button onClick={checkout} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg">
                             Checkout
                           </button>
                           <button onClick={clearCart} className="w-full border-2 border-gray-300 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-all">

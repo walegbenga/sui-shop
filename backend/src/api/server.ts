@@ -186,7 +186,7 @@ app.get('/api/products/:id', async (req, res) => {
       `SELECT 
         id, seller, title, description, price, image_url, category,
         is_available, total_sales, rating_sum, rating_count,
-        quantity, available_quantity, resellable, created_at
+        quantity, available_quantity, resellable, file_cid, created_at
        FROM products 
        WHERE id = $1`,
       [id]
@@ -851,14 +851,17 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
 
 
 // Download file (only for buyers)
-app.get('/api/download/:productId/:userAddress', async (req, res) => {
+// ✅ CONSISTENT NAMING: Use buyerAddress everywhere
+app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
   try {
-    const { productId, userAddress } = req.params;
+    const { productId, buyerAddress } = req.params;
+
+    console.log('Download request:', { productId, buyerAddress }); // DEBUG
 
     // Verify user purchased this product
     const purchase = await pool.query(
       'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
-      [productId, userAddress]
+      [productId, buyerAddress]
     );
 
     if (purchase.rows.length === 0) {
@@ -876,12 +879,6 @@ app.get('/api/download/:productId/:userAddress', async (req, res) => {
     }
 
     const { file_cid, file_name } = product.rows[0];
-
-    // Track download
-    await pool.query(
-      'INSERT INTO downloads (product_id, buyer) VALUES ($1, $2)',
-      [productId, userAddress]
-    );
 
     // Return IPFS URL
     res.json({

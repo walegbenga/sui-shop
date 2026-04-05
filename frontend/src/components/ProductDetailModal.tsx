@@ -93,7 +93,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
     }
   };
 
-  const checkPurchaseStatus = async () => {
+  /*const checkPurchaseStatus = async () => {
     if (!account?.address || !productId) return;
     try {
       const response = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
@@ -103,7 +103,30 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
     } catch (error) {
       console.error('Error checking purchase status:', error);
     }
-  };
+  };*/
+
+  const checkPurchaseStatus = async () => {
+  if (!account?.address || !productId) {
+    setHasPurchased(false);
+    return;
+  }
+
+  try {
+    const response = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
+    const data = await response.json();
+    
+    // ✅ Check if this specific product was purchased
+    const purchased = (data.purchases || []).some(
+      (p: any) => p.product_id === productId
+    );
+    
+    console.log('Purchase check:', { productId, purchased }); // DEBUG
+    setHasPurchased(purchased);
+  } catch (error) {
+    console.error('Error checking purchase status:', error);
+    setHasPurchased(false);
+  }
+};
 
   // ✅ QUICK BUY - IMMEDIATE PURCHASE
   const handleQuickBuy = () => {
@@ -151,11 +174,14 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
       { transaction: tx },
       {
         onSuccess: (result) => {
-          console.log('Purchase successful:', result);
-          toast.success('Purchase successful! 🎉', { id: 'purchase' });
-          fetchProduct();
-          checkPurchaseStatus();
-        },
+  console.log('Purchase successful:', result);
+  toast.success('Purchase successful! 🎉', { id: 'purchase' });
+  fetchProduct();
+  // Wait for indexer to process the purchase event before checking
+  setTimeout(() => {
+    checkPurchaseStatus();
+  }, 6000); // 6 seconds matches the 5s poll interval
+},
         onError: (error: any) => {
           console.error('Purchase failed:', error);
           
@@ -186,69 +212,116 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
 
   // ✅ ADD TO CART
   const handleAddToCart = () => {
-    if (!product) return;
-    
-    if (product.seller === account?.address) {
-      toast.error('You cannot buy your own product');
-      return;
-    }
+  if (!product) return;
+  
+  if (product.seller === account?.address) {
+    toast.error('You cannot buy your own product');
+    return;
+  }
 
-    if (!product.is_available) {
-      toast.error('Product is sold out');
-      return;
-    }
+  if (!product.is_available || product.available_quantity <= 0) {
+    toast.error('Product is sold out');
+    return;
+  }
 
-    addToCart(product);
-    toast.success('Added to cart! 🛒');
-  };
+  addToCart(product);
+  toast.success('Added to cart! 🛒'); // Only one toast here
+};
 
   const handleReviewSubmit = async () => {
-    if (!account?.address || !product) return;
+  if (!account?.address || !product) {
+    toast.error('Please connect your wallet');
+    return;
+  }
 
-    try {
-      const response = await fetch('http://localhost:4000/api/reviews', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_id: product.id,
-          reviewer: account.address,
-          rating: reviewRating,
-          comment: reviewComment,
-        }),
-      });
+  if (!reviewComment.trim()) {
+    toast.error('Please write a review comment');
+    return;
+  }
 
-      if (response.ok) {
-        toast.success('Review submitted! ⭐');
-        setReviewComment('');
-        setReviewRating(5);
-        fetchReviews();
-      }
-    } catch (error) {
-      toast.error('Failed to submit review');
+  // ✅ DEBUG: Log what we're sending
+  console.log('Submitting review:', {
+    product_id: product.id,
+    reviewer: account.address,
+    rating: reviewRating,
+    comment: reviewComment.trim(),
+  });
+
+  toast.loading('Submitting review...', { id: 'review' });
+
+  try {
+    const response = await fetch('http://localhost:4000/api/reviews', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        productId: product.id,        // ✅ ENSURE these match exactly
+        buyerAddress: account.address,      // ✅ what backend expects
+        rating: reviewRating,           // ✅ (number)
+        comment: reviewComment.trim(),  // ✅ (string)
+      }),
+    });
+
+    const data = await response.json();
+    
+    // ✅ DEBUG: Log response
+    console.log('Review response:', data);
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to submit review');
     }
-  };
+
+    toast.success('Review submitted! ⭐', { id: 'review' });
+    setReviewComment('');
+    setReviewRating(5);
+    
+    // Refresh reviews
+    fetchReviews();
+    
+  } catch (error: any) {
+    console.error('Review submission error:', error);
+    toast.error(error.message || 'Failed to submit review', { id: 'review' });
+  }
+};
 
   const handleDownload = async () => {
-    if (!account?.address || !product) return;
+  if (!account?.address || !product?.id) {
+    toast.error('Please connect your wallet');
+    return;
+  }
 
-    try {
-      const response = await fetch(
-        `http://localhost:4000/api/download/${product.id}/${account.address}`
-      );
+  if (!product.file_cid) {
+    toast.error('No file attached to this product');
+    return;
+  }
 
-      if (!response.ok) {
-        const error = await response.json();
-        toast.error(error.error || 'Download failed');
-        return;
-      }
+  toast.loading('Preparing download...', { id: 'download' });
 
-      const data = await response.json();
-      window.open(data.url, '_blank');
-      toast.success('Download started! 📥');
-    } catch (error: any) {
-      toast.error(`Download error: ${error.message}`);
+  try {
+    const response = await fetch(
+      `http://localhost:4000/api/download/${product.id}/${account.address}`
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Download failed', { id: 'download' });
+      return;
     }
-  };
+
+    const data = await response.json();
+    
+    if (data.url) {
+      window.open(data.url, '_blank');
+      toast.success('Download started! 📥', { id: 'download' });
+    } else {
+      toast.error('Download URL not found', { id: 'download' });
+    }
+  } catch (error: any) {
+    console.error('Download error:', error);
+    toast.error(`Download error: ${error.message}`, { id: 'download' });
+  }
+};
 
   if (!product) return null;
 
@@ -392,18 +465,18 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                           </button>
                         )}
 
-                        {/* Download Button */}
-                        {hasPurchased && product.file_cid && (
-                          <button
-                            onClick={handleDownload}
-                            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 rounded-xl font-bold hover:from-green-500 hover:to-emerald-500 transition-all shadow-lg flex items-center justify-center gap-2"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            Download File
-                          </button>
-                        )}
+                        {/* Download Button - Show if user purchased AND file exists */}
+{hasPurchased && product.file_cid && (
+  <button
+    onClick={handleDownload}
+    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 rounded-xl font-bold hover:from-green-500 hover:to-emerald-500 transition-all shadow-lg flex items-center justify-center gap-2"
+  >
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+    Download File
+  </button>
+)}
 
                         {/* Social Actions */}
                         {account && product.seller !== account.address && (
@@ -424,36 +497,39 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
                         )}
                       </div>
 
-                      {/* Reviews Section */}
-                      {hasPurchased && (
-                        <div className="mt-6 pt-6 border-t">
-                          <h3 className="font-bold text-lg mb-3">Leave a Review</h3>
-                          <div className="flex gap-1 mb-3">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <button
-                                key={star}
-                                onClick={() => setReviewRating(star)}
-                                className="text-3xl transition-transform hover:scale-110"
-                              >
-                                {star <= reviewRating ? '⭐' : '☆'}
-                              </button>
-                            ))}
-                          </div>
-                          <textarea
-                            value={reviewComment}
-                            onChange={(e) => setReviewComment(e.target.value)}
-                            placeholder="Share your experience..."
-                            className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:outline-none resize-none"
-                            rows={3}
-                          />
-                          <button
-                            onClick={handleReviewSubmit}
-                            className="mt-3 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-500 transition-colors font-semibold"
-                          >
-                            Submit Review
-                          </button>
-                        </div>
-                      )}
+                      {/* Review Section - Only show if user has purchased */}
+{hasPurchased && (
+  <div className="mt-6 pt-6 border-t">
+    <h3 className="font-bold text-lg mb-3">Leave a Review</h3>
+    <div className="flex gap-1 mb-3">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => setReviewRating(star)}
+          className="text-3xl transition-transform hover:scale-110"
+        >
+          {star <= reviewRating ? '⭐' : '☆'}
+        </button>
+      ))}
+    </div>
+    <textarea
+      value={reviewComment}
+      onChange={(e) => setReviewComment(e.target.value)}
+      placeholder="Share your experience..."
+      className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:outline-none resize-none"
+      rows={3}
+    />
+    <button
+      type="button"
+      onClick={handleReviewSubmit}
+      disabled={!reviewComment.trim()}
+      className="mt-3 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-500 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      Submit Review
+    </button>
+  </div>
+)}
 
                       {/* Reviews List */}
                       {reviews.length > 0 && (

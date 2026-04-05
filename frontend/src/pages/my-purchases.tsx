@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'; // ✅ FIXED
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import ProductDetailModal from '@/components/ProductDetailModal'; // ✅ ADDED
 
 interface Purchase {
   id: string;
@@ -22,12 +23,16 @@ export default function MyPurchases() {
   const account = useCurrentAccount();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     if (account?.address) {
       fetchPurchases();
+    } else {
+      setLoading(false);
     }
-  }, [account]);
+  }, [account?.address]); // ✅ FIX: Only depend on address
 
   const fetchPurchases = async () => {
     if (!account?.address) return;
@@ -69,7 +74,6 @@ export default function MyPurchases() {
   const formatDate = (timestamp: string | number) => {
     const num = Number(timestamp);
     if (!num || isNaN(num)) return 'Unknown date';
-    // Sui timestamps are in milliseconds
     return new Date(num).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -78,23 +82,38 @@ export default function MyPurchases() {
   };
 
   const handleDownload = async (productId: string) => {
-    if (!account?.address) return;
-    try {
-      const response = await fetch(
-        `http://localhost:4000/api/download/${productId}/${account.address}`
-      );
-      if (!response.ok) {
-        const error = await response.json();
-        toast.error(error.error || 'Download failed');
-        return;
-      }
-      const data = await response.json();
-      window.open(data.url, '_blank');
-      toast.success('Download started! 📥');
-    } catch (error: any) {
-      toast.error(`Download error: ${error.message}`);
+  if (!account?.address) {
+    toast.error('Please connect your wallet');
+    return;
+  }
+  
+  toast.loading('Preparing download...', { id: 'download' });
+  
+  try {
+    const response = await fetch(
+      `http://localhost:4000/api/download/${productId}/${account.address}`
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Download failed', { id: 'download' });
+      return;
     }
-  };
+    
+    const data = await response.json();
+    
+    if (data.url) {
+      // ✅ Open in new tab
+      window.open(data.url, '_blank');
+      toast.success('Download started! 📥', { id: 'download' });
+    } else {
+      toast.error('Download URL not found', { id: 'download' });
+    }
+  } catch (error: any) {
+    console.error('Download error:', error);
+    toast.error(`Download error: ${error.message}`, { id: 'download' });
+  }
+};
 
   if (!account) {
     return (
@@ -188,12 +207,15 @@ export default function MyPurchases() {
                               📥 Download
                             </button>
                           )}
-                          <Link
-                            href={`/?product=${purchase.product_id}`}
+                          <button
+                            onClick={() => {
+                              setSelectedProductId(purchase.product_id);
+                              setIsModalOpen(true);
+                            }}
                             className="text-sm text-indigo-600 hover:text-indigo-500 font-medium transition-colors"
                           >
                             View Product
-                          </Link>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -204,6 +226,17 @@ export default function MyPurchases() {
           </ul>
         </div>
       )}
+
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        productId={selectedProductId}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedProductId(null);
+          fetchPurchases();
+        }}
+      />
     </div>
   );
 }
