@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'; // ✅ FIXED
+import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import ProductDetailModal from '@/components/ProductDetailModal'; // ✅ ADDED
+import ProductDetailModal from '@/components/ProductDetailModal';
 
 interface Purchase {
   id: string;
@@ -32,7 +32,7 @@ export default function MyPurchases() {
     } else {
       setLoading(false);
     }
-  }, [account?.address]); // ✅ FIX: Only depend on address
+  }, [account?.address]);
 
   const fetchPurchases = async () => {
     if (!account?.address) return;
@@ -81,39 +81,18 @@ export default function MyPurchases() {
     });
   };
 
+  // ✅ SIMPLE DOWNLOAD HANDLER
   const handleDownload = async (productId: string) => {
-  if (!account?.address) {
-    toast.error('Please connect your wallet');
-    return;
-  }
-  
-  toast.loading('Preparing download...', { id: 'download' });
-  
-  try {
-    const response = await fetch(
-      `http://localhost:4000/api/download/${productId}/${account.address}`
-    );
-    
-    if (!response.ok) {
-      const error = await response.json();
-      toast.error(error.error || 'Download failed', { id: 'download' });
+    if (!account?.address) {
+      toast.error('Please connect your wallet');
       return;
     }
     
-    const data = await response.json();
-    
-    if (data.url) {
-      // ✅ Open in new tab
-      window.open(data.url, '_blank');
-      toast.success('Download started! 📥', { id: 'download' });
-    } else {
-      toast.error('Download URL not found', { id: 'download' });
-    }
-  } catch (error: any) {
-    console.error('Download error:', error);
-    toast.error(`Download error: ${error.message}`, { id: 'download' });
-  }
-};
+    // Just open the URL - backend handles everything
+    const downloadUrl = `http://localhost:4000/api/download/${productId}/${account.address}`;
+    window.open(downloadUrl, '_blank');
+    toast.success('Download started! 📥');
+  };
 
   if (!account) {
     return (
@@ -227,7 +206,6 @@ export default function MyPurchases() {
         </div>
       )}
 
-      {/* Product Detail Modal */}
       <ProductDetailModal
         productId={selectedProductId}
         isOpen={isModalOpen}

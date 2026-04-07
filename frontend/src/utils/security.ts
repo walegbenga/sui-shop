@@ -132,6 +132,28 @@ export function isValidObjectId(id: string): boolean {
   return /^0x[a-fA-F0-9]{64}$/.test(id);
 }
 
+/**
+ * Validate file type
+ */
+export const isAllowedFileType = (file: File): boolean => {
+  const allowedTypes = [
+    'application/pdf',
+    'application/zip',
+    'application/x-zip-compressed',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ];
+  return allowedTypes.includes(file.type);
+};
+
+/**
+ * Validate file size (100MB max)
+ */
+export const isValidFileSize = (file: File): boolean => {
+  const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+  return file.size <= MAX_SIZE;
+};
 // ==================== Exports ====================
 
 export default {

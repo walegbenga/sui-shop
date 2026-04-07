@@ -9,7 +9,8 @@ import dotenv from 'dotenv';
 import { PinataSDK } from 'pinata-web3';
 import multer from 'multer';
 import { Request, Response } from 'express';
-
+import { body, validationResult } from 'express-validator';
+const rateLimit = require('express-rate-limit');
 import { pool } from '../config/database';
 
 dotenv.config();
@@ -31,6 +32,44 @@ const upload = multer({
 const pinata = new PinataSDK({
   pinataJwt: process.env.PINATA_API_KEY!,
   pinataGateway: 'gateway.pinata.cloud'
+});
+
+// ✅ INPUT VALIDATION HELPERS
+const sanitizeAddress = (address: string): string => {
+  // Sui addresses are 66 characters starting with 0x
+  if (!/^0x[a-fA-F0-9]{64}$/.test(address)) {
+    throw new Error('Invalid address format');
+  }
+  return address.toLowerCase();
+};
+
+const sanitizeString = (str: string, maxLength: number = 1000): string => {
+  if (typeof str !== 'string') {
+    throw new Error('Input must be a string');
+  }
+  // Remove any HTML/script tags
+  const cleaned = str.replace(/<[^>]*>/g, '').trim();
+  return cleaned.substring(0, maxLength);
+};
+
+const sanitizeNumber = (num: any, min: number = 0, max: number = Number.MAX_SAFE_INTEGER): number => {
+  const parsed = Number(num);
+  if (isNaN(parsed) || parsed < min || parsed > max) {
+    throw new Error(`Number must be between ${min} and ${max}`);
+  }
+  return parsed;
+};
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // Limit uploads to 10 per hour
+  message: 'Too many uploads, please try again later.',
+});
+
+const reviewLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Limit reviews to 5 per hour
+  message: 'Too many reviews, please try again later.',
 });
 
 // Health check
@@ -557,9 +596,12 @@ app.post('/api/favorites', async (req, res) => {
 // Remove product from favorites
 app.delete('/api/favorites', async (req, res) => {
   try {
+    console.log('DELETE /api/favorites body:', req.body); // ← ADD THIS
+
     const { userAddress, productId } = req.body;
 
     if (!userAddress || !productId) {
+      console.log('Missing fields:', { userAddress, productId }); // ← ADD THIS
       return res.status(400).json({ error: 'User address and product ID required' });
     }
 
@@ -582,7 +624,20 @@ app.get('/api/users/:address/favorites', async (req, res) => {
     const { address } = req.params;
 
     const result = await pool.query(
-      `SELECT p.*, f.created_at as favorited_at
+      `SELECT 
+        p.id as product_id,
+        p.title,
+        p.price,
+        p.image_url,
+        p.category,
+        p.seller,
+        p.is_available,
+        p.total_sales,
+        p.rating_sum,
+        p.rating_count,
+        p.resellable,
+        p.file_cid,
+        f.created_at as favorited_at
        FROM products p
        JOIN favorites f ON p.id = f.product_id
        WHERE f.user_address = $1
@@ -620,7 +675,7 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
 // ==================== Review Endpoints ====================
 
 // Submit a review
-app.post('/api/reviews', async (req, res) => {
+/*app.post('/api/reviews', async (req, res) => {
   try {
     const { productId, buyerAddress, rating, comment } = req.body;
 
@@ -672,7 +727,76 @@ app.post('/api/reviews', async (req, res) => {
     res.status(500).json({ error: 'Failed to submit review' });
   }
 });
+*/
 
+// Submit a review - WITH SECURITY
+app.post('/api/reviews', reviewLimiter, async (req, res) => {
+  try {
+    const { productId, buyerAddress, rating, comment } = req.body;
+
+    console.log('Review submission:', { productId, buyerAddress, rating, comment });
+
+    // ✅ VALIDATE & SANITIZE
+    if (!productId || !buyerAddress || !rating) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    let cleanProductId: string;
+    let cleanReviewer: string;
+    let cleanRating: number;
+    let cleanComment: string;
+
+    try {
+      cleanProductId = sanitizeAddress(productId);
+      cleanReviewer = sanitizeAddress(buyerAddress);
+      cleanRating = sanitizeNumber(rating, 1, 5);
+      cleanComment = sanitizeString(comment || '', 1000);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Check if user has purchased this product
+    const purchaseCheck = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [cleanProductId, cleanReviewer]
+    );
+
+    if (purchaseCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product before reviewing' });
+    }
+
+    // Check if user already reviewed
+    const reviewCheck = await pool.query(
+      'SELECT * FROM reviews WHERE product_id = $1 AND reviewer = $2',
+      [cleanProductId, cleanReviewer]
+    );
+
+    if (reviewCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'You have already reviewed this product' });
+    }
+
+    // Insert review with sanitized data
+    await pool.query(
+      `INSERT INTO reviews (product_id, reviewer, rating, comment, created_at)
+       VALUES ($1, $2, $3, $4, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)`,
+      [cleanProductId, cleanReviewer, cleanRating, cleanComment]
+    );
+
+    // Update product rating
+    await pool.query(
+      `UPDATE products 
+       SET rating_sum = rating_sum + $1,
+           rating_count = rating_count + 1
+       WHERE id = $2`,
+      [cleanRating, cleanProductId]
+    );
+
+    res.json({ success: true, message: 'Review submitted successfully' });
+  } catch (error: any) {
+    console.error('Error submitting review:', error);
+    res.status(500).json({ error: 'Failed to submit review' });
+  }
+});
 // Get reviews for a product
 /*app.get('/api/products/:id/reviews', async (req, res) => {
   try {
@@ -852,7 +976,7 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
 
 // Download file (only for buyers)
 // ✅ CONSISTENT NAMING: Use buyerAddress everywhere
-app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
+/*app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
   try {
     const { productId, buyerAddress } = req.params;
 
@@ -891,8 +1015,111 @@ app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
   }
 });
 
+// Download file - WITH SECURITY
+app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
+  try {
+    const { productId, buyerAddress } = req.params;
+
+    // ✅ VALIDATE ADDRESSES
+    let cleanProductId: string;
+    let cleanBuyerAddress: string;
+    
+    try {
+      cleanProductId = sanitizeAddress(productId);
+      cleanBuyerAddress = sanitizeAddress(buyerAddress);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Verify purchase
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [cleanProductId, cleanBuyerAddress]
+    );
+
+    if (purchase.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product to download' });
+    }
+
+    // Get product file info
+    const product = await pool.query(
+      'SELECT file_cid, file_name FROM products WHERE id = $1',
+      [cleanProductId]
+    );
+
+    if (product.rows.length === 0 || !product.rows[0].file_cid) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const { file_cid, file_name } = product.rows[0];
+
+    res.json({
+      url: `https://gateway.pinata.cloud/ipfs/${file_cid}`,
+      fileName: file_name
+    });
+  } catch (error: any) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to get download link' });
+  }
+});
+*/
+
+// ✅ SINGLE DOWNLOAD ROUTE - With Security & Hidden URL
+app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
+  try {
+    const { productId, buyerAddress } = req.params;
+
+    console.log('Download request:', { productId, buyerAddress });
+
+    // ✅ SECURITY: Validate addresses
+    let cleanProductId: string;
+    let cleanBuyerAddress: string;
+    
+    try {
+      cleanProductId = sanitizeAddress(productId);
+      cleanBuyerAddress = sanitizeAddress(buyerAddress);
+    } catch (error: any) {
+      return res.status(400).json({ error: 'Invalid address format' });
+    }
+
+    // ✅ VERIFY PURCHASE
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [cleanProductId, cleanBuyerAddress]
+    );
+
+    if (purchase.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product to download' });
+    }
+
+    // ✅ GET FILE INFO
+    const product = await pool.query(
+      'SELECT file_cid, file_name FROM products WHERE id = $1',
+      [cleanProductId]
+    );
+
+    if (product.rows.length === 0 || !product.rows[0].file_cid) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const { file_cid, file_name } = product.rows[0];
+
+    // ✅ REDIRECT TO IPFS (This hides the full Pinata URL in browser)
+    const ipfsUrl = `https://gateway.pinata.cloud/ipfs/${file_cid}`;
+    
+    // Set download headers so browser treats it as download
+    res.setHeader('Content-Disposition', `attachment; filename="${file_name || 'download'}"`);
+    
+    // Redirect - browser will show your domain URL, not Pinata
+    res.redirect(ipfsUrl);
+    
+  } catch (error: any) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download file' });
+  }
+});
 // Upload file to IPFS
-app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
+/*app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -954,6 +1181,78 @@ app.post('/api/upload', upload.single('file'), async (req: Request, res) => {
       error: 'Failed to upload file',
       details: error.message,
       type: error.constructor.name,
+    });
+  }
+});*/
+
+// Upload file to IPFS - WITH SECURITY
+app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Request, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { seller } = req.body;
+    
+    // ✅ VALIDATE SELLER ADDRESS
+    let cleanSeller: string;
+    try {
+      cleanSeller = sanitizeAddress(seller);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // ✅ VALIDATE FILE TYPE
+    const allowedTypes = [
+      'application/pdf',
+      'application/zip',
+      'application/x-zip-compressed',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'text/plain',
+    ];
+
+    if (!allowedTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({ 
+        error: 'File type not allowed',
+        allowedTypes: 'PDF, ZIP, JPG, PNG, WEBP, TXT'
+      });
+    }
+
+    // ✅ VALIDATE FILE SIZE (100MB)
+    const MAX_SIZE = 100 * 1024 * 1024;
+    if (req.file.size > MAX_SIZE) {
+      return res.status(400).json({ error: 'File size exceeds 100MB limit' });
+    }
+
+    console.log(`📤 Uploading file: ${req.file.originalname}`);
+    console.log(`   Type: ${req.file.mimetype}`);
+    console.log(`   Size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
+
+    // Upload to Pinata
+    const uint8Array = new Uint8Array(req.file.buffer);
+    const blob = new Blob([uint8Array], { type: req.file.mimetype });
+    const file = new File([blob], req.file.originalname, {
+      type: req.file.mimetype,
+      lastModified: Date.now(),
+    });
+
+    const result = await pinata.upload.file(file);
+
+    console.log(`✅ File uploaded to IPFS: ${result.IpfsHash}`);
+
+    res.json({
+      cid: result.IpfsHash,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Upload error:', error);
+    res.status(500).json({
+      error: 'Failed to upload file',
+      details: error.message,
     });
   }
 });

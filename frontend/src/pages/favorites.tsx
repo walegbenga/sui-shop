@@ -31,7 +31,6 @@ export default function Favorites() {
 
   const fetchFavorites = async () => {
     if (!account?.address) return;
-
     setLoading(true);
     try {
       const response = await fetch(
@@ -47,32 +46,35 @@ export default function Favorites() {
     }
   };
 
-  // ✅ RESTORE UNFAVORITE FUNCTION
   const handleUnfavorite = async (productId: string) => {
-  if (!account?.address) return;
+    if (!account?.address) return;
+    try {
+      const response = await fetch('http://localhost:4000/api/favorites', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userAddress: account.address,
+          productId,
+        }),
+      });
 
-  try {
-    const response = await fetch('http://localhost:4000/api/favorites', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userAddress: account.address,  // ✅ Changed from userAddress
-        productId: productId,           // ✅ Changed from productId
-      }),
-    });
-
-    if (response.ok) {
-      toast.success('Removed from favorites');
-      fetchFavorites();
-    } else {
-      const error = await response.json();
-      toast.error(error.error || 'Failed to remove favorite');
+      if (response.ok) {
+        // Optimistically remove from UI immediately
+        setFavorites((prev) => prev.filter((f) => f.product_id !== productId));
+        toast.success('Removed from favorites');
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to remove favorite');
+      }
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     }
-  } catch (error: any) {
-    console.error('Unfavorite error:', error);
-    toast.error(`Error: ${error.message}`);
-  }
-};
+  };
+
+  const openProduct = (productId: string) => {
+    setSelectedProductId(productId);
+    setIsModalOpen(true);
+  };
 
   if (!account) {
     return (
@@ -124,18 +126,16 @@ export default function Favorites() {
                   src={favorite.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
                   alt={favorite.title}
                   className="w-full h-48 object-cover cursor-pointer"
-                  onClick={() => {
-                    setSelectedProductId(favorite.product_id);
-                    setIsModalOpen(true);
-                  }}
+                  onClick={() => openProduct(favorite.product_id)}
                   onError={(e) => {
                     e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image';
                   }}
                 />
-                
-                {/* ✅ UNFAVORITE BUTTON */}
                 <button
-                  onClick={() => handleUnfavorite(favorite.product_id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUnfavorite(favorite.product_id);
+                  }}
                   className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-all shadow-lg"
                   title="Remove from favorites"
                 >
@@ -146,12 +146,9 @@ export default function Favorites() {
               </div>
 
               <div className="p-4">
-                <h3 
+                <h3
                   className="text-lg font-semibold text-gray-900 mb-2 cursor-pointer hover:text-indigo-600"
-                  onClick={() => {
-                    setSelectedProductId(favorite.product_id);
-                    setIsModalOpen(true);
-                  }}
+                  onClick={() => openProduct(favorite.product_id)}
                 >
                   {favorite.title}
                 </h3>
@@ -168,10 +165,7 @@ export default function Favorites() {
                 </p>
 
                 <button
-                  onClick={() => {
-                    setSelectedProductId(favorite.product_id);
-                    setIsModalOpen(true);
-                  }}
+                  onClick={() => openProduct(favorite.product_id)}
                   className="w-full mt-4 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-500 transition-colors font-semibold"
                 >
                   View Product
@@ -182,14 +176,13 @@ export default function Favorites() {
         </div>
       )}
 
-      {/* Product Detail Modal */}
       <ProductDetailModal
         productId={selectedProductId}
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
           setSelectedProductId(null);
-          fetchFavorites(); // Refresh in case favorite status changed
+          fetchFavorites();
         }}
       />
     </div>

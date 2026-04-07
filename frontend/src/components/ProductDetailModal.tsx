@@ -59,6 +59,10 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
   const { isFavorited, toggleFavorite } = useFavoriteProduct(productId || '', account?.address);
   const { isFollowing, toggleFollow } = useFollowSeller(product?.seller || '', account?.address);
 
+  const [showResaleModal, setShowResaleModal] = useState(false);
+  const [resalePrice, setResalePrice] = useState('');
+  const [resaleListing, setResaleListing] = useState(false);
+
   useEffect(() => {
     if (productId && isOpen) {
       fetchProduct();
@@ -285,6 +289,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
   }
 };
 
+/*
   const handleDownload = async () => {
   if (!account?.address || !product?.id) {
     toast.error('Please connect your wallet');
@@ -320,6 +325,78 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
   } catch (error: any) {
     console.error('Download error:', error);
     toast.error(`Download error: ${error.message}`, { id: 'download' });
+  }
+};
+*/
+
+const handleDownload = async () => {
+  if (!account?.address || !product?.id) {
+    toast.error('Please connect your wallet');
+    return;
+  }
+
+  if (!product.file_cid) {
+    toast.error('No file attached to this product');
+    return;
+  }
+
+  // ✅ SIMPLE: Just open the URL - backend handles redirect
+  const downloadUrl = `http://localhost:4000/api/download/${product.id}/${account.address}`;
+  
+  window.open(downloadUrl, '_blank');
+  toast.success('Download started! 📥');
+};
+
+const handleResale = async () => {
+  if (!account?.address || !product) {
+    toast.error('Please connect your wallet');
+    return;
+  }
+
+  if (!resalePrice || Number(resalePrice) <= 0) {
+    toast.error('Please enter a valid price');
+    return;
+  }
+
+  setResaleListing(true);
+  toast.loading('Listing for resale...', { id: 'resale' });
+
+  try {
+    const priceInMist = Math.floor(Number(resalePrice) * 1_000_000_000);
+    
+    const tx = new Transaction();
+    
+    tx.moveCall({
+      target: `${PACKAGE_ID}::marketplace::list_for_resale`,
+      arguments: [
+        tx.object(MARKETPLACE_ID),
+        tx.object(product.id),
+        tx.pure.u64(priceInMist),
+        tx.object('0x6'), // clock
+      ],
+    });
+
+    signAndExecuteTransaction(
+      { transaction: tx },
+      {
+        onSuccess: (result) => {
+          console.log('Resale listing successful:', result);
+          toast.success('Listed for resale! 🎉', { id: 'resale' });
+          setShowResaleModal(false);
+          setResalePrice('');
+          fetchProduct();
+        },
+        onError: (error: any) => {
+          console.error('Resale failed:', error);
+          toast.error(error.message || 'Failed to list for resale', { id: 'resale' });
+        },
+      }
+    );
+  } catch (error: any) {
+    console.error('Transaction build failed:', error);
+    toast.error('Failed to build transaction', { id: 'resale' });
+  } finally {
+    setResaleListing(false);
   }
 };
 
@@ -478,6 +555,18 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
   </button>
 )}
 
+{/* ✅ LIST FOR RESALE - Show if user purchased AND product is resellable */}
+{hasPurchased && product.resellable && (
+  <button
+    onClick={() => setShowResaleModal(true)}
+    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 rounded-xl font-bold hover:from-purple-500 hover:to-pink-500 transition-all shadow-lg flex items-center justify-center gap-2"
+  >
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+    🔄 List for Resale
+  </button>
+)}
                         {/* Social Actions */}
                         {account && product.seller !== account.address && (
                           <div className="grid grid-cols-2 gap-3">
@@ -532,24 +621,34 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
 )}
 
                       {/* Reviews List */}
-                      {reviews.length > 0 && (
-                        <div className="mt-6 pt-6 border-t max-h-64 overflow-y-auto">
-                          <h3 className="font-bold text-lg mb-3">Reviews ({reviews.length})</h3>
-                          <div className="space-y-3">
-                            {reviews.map((review, idx) => (
-                              <div key={idx} className="bg-gray-50 p-4 rounded-xl">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-yellow-500 text-sm">{'⭐'.repeat(review.rating)}</span>
-                                  <span className="text-xs text-gray-500">
-                                    {new Date(review.created_at).toLocaleDateString()}
-                                  </span>
-                                </div>
-                                <p className="text-sm text-gray-700">{review.comment}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+{reviews.length > 0 && (
+  <div className="mt-6 pt-6 border-t max-h-64 overflow-y-auto">
+    <h3 className="font-bold text-lg mb-3">Reviews ({reviews.length})</h3>
+    <div className="space-y-3">
+      {reviews.map((review, idx) => (
+        <div key={idx} className="bg-gray-50 p-4 rounded-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-yellow-500 text-sm">{'⭐'.repeat(review.rating)}</span>
+            <span className="text-xs text-gray-500">
+              {/* ✅ FIX: Proper date formatting */}
+              {(() => {
+                const timestamp = Number(review.created_at);
+                if (isNaN(timestamp) || timestamp === 0) return 'Recently';
+                const date = new Date(timestamp);
+                return date.toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                });
+              })()}
+            </span>
+          </div>
+          <p className="text-sm text-gray-700">{review.comment}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
                     </div>
                   </div>
                 </div>
@@ -557,6 +656,94 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
             </Transition.Child>
           </div>
         </div>
+        {/* Resale Modal */}
+{/* Resale Modal - COMPLETE FIXED VERSION */}
+<Transition appear show={showResaleModal} as={Fragment}>
+  <Dialog 
+    as="div" 
+    className="relative z-[70]" 
+    onClose={() => {
+      setShowResaleModal(false);
+      setResalePrice('');
+    }}
+  >
+    <Transition.Child
+      as={Fragment}
+      enter="ease-out duration-300"
+      enterFrom="opacity-0"
+      enterTo="opacity-100"
+      leave="ease-in duration-200"
+      leaveFrom="opacity-100"
+      leaveTo="opacity-0"
+    >
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+    </Transition.Child>
+
+    <div className="fixed inset-0 overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center p-4">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0 scale-95"
+          enterTo="opacity-100 scale-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100 scale-100"
+          leaveTo="opacity-0 scale-95"
+        >
+          <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 shadow-2xl transition-all">
+            <Dialog.Title className="text-2xl font-bold text-gray-900 mb-4">
+              List for Resale
+            </Dialog.Title>
+            
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Resale Price (SUI)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={resalePrice}
+                  onChange={(e) => setResalePrice(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0.01"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  autoFocus
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">
+                  SUI
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-gray-500">
+                Original price: {(Number(product.price) / 1e9).toFixed(2)} SUI
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleResale}
+                disabled={resaleListing || !resalePrice || Number(resalePrice) <= 0}
+                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-xl font-bold hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {resaleListing ? 'Listing...' : 'Confirm Listing'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowResaleModal(false);
+                  setResalePrice('');
+                }}
+                disabled={resaleListing}
+                className="px-6 py-3 border-2 border-gray-300 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+            </div>
+          </Dialog.Panel>
+        </Transition.Child>
+      </div>
+    </div>
+  </Dialog>
+</Transition>
       </Dialog>
     </Transition>
   );
