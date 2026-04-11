@@ -79,6 +79,36 @@ CREATE TABLE indexer_state (
 -- Insert initial indexer state
 INSERT INTO indexer_state (id, last_synced_checkpoint) VALUES (1, 0);
 
+-- Ownership Tokens Table
+CREATE TABLE IF NOT EXISTS ownership_tokens (
+  id SERIAL PRIMARY KEY,
+  token_id VARCHAR(66) UNIQUE NOT NULL,
+  original_product_id VARCHAR(66) NOT NULL,
+  current_owner VARCHAR(66) NOT NULL,
+  previous_owner VARCHAR(66),
+  original_seller VARCHAR(66) NOT NULL,
+  purchase_price BIGINT NOT NULL,
+  purchase_timestamp BIGINT NOT NULL,
+  is_listed_for_resale BOOLEAN DEFAULT false,
+  resale_price BIGINT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Resale Listings Table
+CREATE TABLE IF NOT EXISTS resale_listings (
+  id SERIAL PRIMARY KEY,
+  listing_id VARCHAR(66) UNIQUE NOT NULL,
+  token_id VARCHAR(66) NOT NULL,
+  seller VARCHAR(66) NOT NULL,
+  price BIGINT NOT NULL,
+  original_product_id VARCHAR(66) NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at BIGINT NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW(),
+  FOREIGN KEY (token_id) REFERENCES ownership_tokens(token_id)
+);
+
 -- ==================== Indexes for Performance ====================
 
 -- Products indexes
@@ -106,6 +136,12 @@ CREATE INDEX idx_purchases_created_at ON purchases(created_at DESC);
 -- Sellers indexes
 CREATE INDEX idx_sellers_created_at ON sellers(created_at DESC);
 CREATE INDEX idx_sellers_total_sales ON sellers(total_sales DESC);
+
+-- resale indexes
+CREATE INDEX idx_ownership_tokens_owner ON ownership_tokens(current_owner);
+CREATE INDEX idx_ownership_tokens_product ON ownership_tokens(original_product_id);
+CREATE INDEX idx_resale_listings_seller ON resale_listings(seller);
+CREATE INDEX idx_resale_listings_active ON resale_listings(is_active);
 
 -- ==================== Views for Analytics ====================
 

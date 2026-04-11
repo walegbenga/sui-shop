@@ -732,12 +732,12 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
 // Submit a review - WITH SECURITY
 app.post('/api/reviews', reviewLimiter, async (req, res) => {
   try {
-    const { productId, buyerAddress, rating, comment } = req.body;
+    const { product_id, reviewer, rating, comment } = req.body;
 
-    console.log('Review submission:', { productId, buyerAddress, rating, comment });
+    console.log('Review submission:', { product_id, reviewer, rating, comment });
 
     // ✅ VALIDATE & SANITIZE
-    if (!productId || !buyerAddress || !rating) {
+    if (!product_id || !reviewer || !rating) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -747,8 +747,8 @@ app.post('/api/reviews', reviewLimiter, async (req, res) => {
     let cleanComment: string;
 
     try {
-      cleanProductId = sanitizeAddress(productId);
-      cleanReviewer = sanitizeAddress(buyerAddress);
+      cleanProductId = sanitizeAddress(product_id);
+      cleanReviewer = sanitizeAddress(reviewer);
       cleanRating = sanitizeNumber(rating, 1, 5);
       cleanComment = sanitizeString(comment || '', 1000);
     } catch (error: any) {
@@ -1254,6 +1254,150 @@ app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Reques
       error: 'Failed to upload file',
       details: error.message,
     });
+  }
+});
+
+// Get ownership token for a user's purchase of a resellable product
+/*
+app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
+  try {
+    const { productId, userAddress } = req.params;
+
+    // Look up the ownership token from the Sui blockchain directly
+    const { SuiClient } = await import('@mysten/sui/client');
+    const suiClient = new SuiClient({ url: 'https://fullnode.testnet.sui.io:443' });
+
+    // Query objects owned by the user of type OwnershipToken
+    const objects = await suiClient.getOwnedObjects({
+      owner: userAddress,
+      filter: {
+        StructType: `${process.env.PACKAGE_ID}::marketplace::OwnershipToken`,
+      },
+      options: { showContent: true },
+    });
+
+    // Find the token for this specific product
+    const token = objects.data.find((obj) => {
+      const content = obj.data?.content as any;
+      return content?.fields?.original_product_id === productId;
+    });
+
+    if (!token?.data?.objectId) {
+      return res.status(404).json({ error: 'Ownership token not found' });
+    }
+
+    res.json({ tokenId: token.data.objectId });
+  } catch (error) {
+    console.error('Error fetching ownership token:', error);
+    res.status(500).json({ error: 'Failed to fetch ownership token' });
+  }
+});
+*/
+
+// Get all resale listings
+/*app.get('/api/resale-listings', async (req, res) => {
+  try {
+    // Query resale listings from database
+    const result = await pool.query(`
+      SELECT 
+        rl.*,
+        p.title as product_title,
+        p.image_url as product_image,
+        p.category as product_category,
+        p.description as product_description
+      FROM resale_listings rl
+      LEFT JOIN products p ON rl.original_product_id = p.id
+      WHERE rl.is_active = true
+      ORDER BY rl.created_at DESC
+    `);
+
+    res.json({ listings: result.rows });
+  } catch (error) {
+    console.error('Error fetching resale listings:', error);
+    res.status(500).json({ error: 'Failed to fetch resale listings' });
+  }
+});
+*/
+
+// ✅ SPECIFIC route FIRST
+app.get('/api/resale-listings/user/:userAddress/:productId', async (req, res) => {
+  try {
+    const { userAddress, productId } = req.params;
+    console.log('Checking resale listing:', { userAddress, productId });
+
+    const result = await pool.query(
+      `SELECT * FROM resale_listings 
+       WHERE seller = $1 
+         AND original_product_id = $2 
+         AND is_active = true
+       LIMIT 1`,
+      [userAddress, productId]
+    );
+
+    console.log('Resale listing result:', result.rows);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ listing: null });
+    }
+
+    res.json({ listing: result.rows[0] });
+  } catch (error) {
+    console.error('Error checking user listing:', error);
+    res.status(500).json({ error: 'Failed to check user listing' });
+  }
+});
+
+
+// Get all active resale listings with product info joined
+app.get('/api/resale-listings', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+        rl.listing_id,
+        rl.token_id,
+        rl.seller,
+        rl.price,
+        rl.original_product_id,
+        rl.is_active,
+        rl.created_at,
+        p.title        AS product_title,
+        p.image_url    AS product_image,
+        p.category     AS product_category,
+        p.description  AS product_description,
+        p.seller       AS original_seller
+       FROM resale_listings rl
+       LEFT JOIN products p ON p.id = rl.original_product_id
+       WHERE rl.is_active = true
+       ORDER BY rl.created_at DESC`
+    );
+
+    res.json({ listings: result.rows });
+  } catch (error) {
+    console.error('Error fetching resale listings:', error);
+    res.status(500).json({ error: 'Failed to fetch resale listings' });
+  }
+});
+
+
+// Get ownership token for a user and product
+app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
+  try {
+    const { productId, userAddress } = req.params;
+    console.log('resale request:', { productId, userAddress });
+    // Query the ownership_tokens table
+    const result = await pool.query(
+      'SELECT token_id FROM ownership_tokens WHERE original_product_id = $1 AND current_owner = $2 AND is_listed_for_resale = false',
+      [productId, userAddress]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Ownership token not found' });
+    }
+
+    res.json({ tokenId: result.rows[0].token_id });
+  } catch (error) {
+    console.error('Error fetching ownership token:', error);
+    res.status(500).json({ error: 'Failed to fetch ownership token' });
   }
 });
 

@@ -9,6 +9,7 @@ import AuthButton from './AuthButton';
 import Logo from './Logo';
 import { useCart } from '@/contexts/CartContext';
 import toast from 'react-hot-toast';
+import { useAutoLogout } from '@/hooks/useAutoLogout';
 
 interface LayoutProps {
   children: ReactNode;
@@ -40,6 +41,9 @@ export default function Layout({ children }: LayoutProps) {
     { href: '/profile', label: 'Profile', requireAuth: true },
   ];
 
+  // ✅ Add auto-logout
+  useAutoLogout();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50">
       {/* Header */}
@@ -48,7 +52,18 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center hover:opacity-80 transition-opacity">
-              <Logo className="h-10" />
+            <img 
+          src="/logo.svg" 
+          alt="Digi ChainStore" 
+          className="h-10 w-10"
+        />
+        <div className="flex flex-col leading-tight">
+          <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+            Digi ChainStore
+          </span>
+          <span className="text-xs text-gray-500">The Digital ChainStore of the People</span>
+        </div>
+              {/*<Logo className="h-10" />*/}
             </Link>
 
             {/* Desktop Navigation */}
@@ -124,9 +139,13 @@ export default function Layout({ children }: LayoutProps) {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
-              <Logo className="h-8" />
+              <img src="/logo.svg" alt="Digi ChainStore" className="h-8 w-8" />
+              <span className="text-lg font-bold">Digi ChainStore</span>
+            
+            {/*<p className="text-gray-400 text-sm">The Digital ChainStore of the People</p>*/}
               <span className="text-sm text-gray-600">© 2026 CoA Tech. All rights reserved.</span>
             </div>
+            
             <div className="flex gap-6 text-sm text-gray-600">
               <a href="#" className="hover:text-indigo-600 transition-colors">About</a>
               <a href="#" className="hover:text-indigo-600 transition-colors">Terms</a>

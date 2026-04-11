@@ -1,5 +1,6 @@
 import '@/styles/globals.css';
 import type { AppProps } from 'next/app';
+import Head from 'next/head'; // ✅ ADD THIS IMPORT
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SuiClientProvider, WalletProvider, useSuiClientContext } from '@mysten/dapp-kit';
 import { registerEnokiWallets, isEnokiNetwork } from '@mysten/enoki';
@@ -46,39 +47,49 @@ export default function App({ Component, pageProps }: AppProps) {
     (process.env.NEXT_PUBLIC_SUI_NETWORK as 'testnet' | 'mainnet' | 'devnet') || 'testnet';
 
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <SuiClientProvider networks={networkConfig} defaultNetwork={network}>
-          <RegisterEnokiWallets />
-          <WalletProvider autoConnect>
-            <CartProvider>
-              <Layout>
-                <Component {...pageProps} />
-              </Layout>
-              <Toaster
-                position="top-right"
-                toastOptions={{
-                  duration: 4000,
-                  style: { background: '#363636', color: '#fff', borderRadius: '10px', padding: '16px' },
-                  success: {
-                    duration: 3000,
-                    iconTheme: { primary: '#10b981', secondary: '#fff' },
-                    style: { background: '#10b981' },
-                  },
-                  error: {
-                    duration: 5000,
-                    iconTheme: { primary: '#ef4444', secondary: '#fff' },
-                    style: { background: '#ef4444' },
-                  },
-                  loading: {
-                    iconTheme: { primary: '#6366f1', secondary: '#fff' },
-                  },
-                }}
-              />
-            </CartProvider>
-          </WalletProvider>
-        </SuiClientProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+    <>
+      {/* ✅ ADD HEAD TAG */}
+      <Head>
+        <title>Digi ChainStore - Multi-Chain Marketplace</title>
+        <meta name="description" content="Buy and sell digital products on the blockchain" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+      </Head>
+
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <SuiClientProvider networks={networkConfig} defaultNetwork={network}>
+            <RegisterEnokiWallets />
+            <WalletProvider autoConnect>
+              <CartProvider>
+                <Layout>
+                  <Component {...pageProps} />
+                </Layout>
+                <Toaster
+                  position="top-right"
+                  toastOptions={{
+                    duration: 4000,
+                    style: { background: '#363636', color: '#fff', borderRadius: '10px', padding: '16px' },
+                    success: {
+                      duration: 3000,
+                      iconTheme: { primary: '#10b981', secondary: '#fff' },
+                      style: { background: '#10b981' },
+                    },
+                    error: {
+                      duration: 5000,
+                      iconTheme: { primary: '#ef4444', secondary: '#fff' },
+                      style: { background: '#ef4444' },
+                    },
+                    loading: {
+                      iconTheme: { primary: '#6366f1', secondary: '#fff' },
+                    },
+                  }}
+                />
+              </CartProvider>
+            </WalletProvider>
+          </SuiClientProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </>
   );
 }

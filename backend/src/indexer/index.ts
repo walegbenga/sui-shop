@@ -23,18 +23,12 @@ async function getSavedCursor(): Promise<any | null> {
   );
   const raw = result.rows[0]?.last_event_cursor;
   if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(raw); } catch { return null; }
 }
 
 async function saveCursor(cursor: any) {
   await pool.query(
-    `UPDATE indexer_state
-     SET last_event_cursor = $1, updated_at = NOW()
-     WHERE id = 1`,
+    `UPDATE indexer_state SET last_event_cursor = $1, updated_at = NOW() WHERE id = 1`,
     [JSON.stringify(cursor)]
   );
 }
@@ -43,10 +37,10 @@ async function saveCursor(cursor: any) {
 
 async function handleProductListed(event: any) {
   const parsedJson = event.parsedJson as any;
-  const productId = parsedJson.product_id;
-  const seller    = parsedJson.seller;
-  const price     = parsedJson.price;
-  const timestamp = parsedJson.timestamp;
+  const productId  = parsedJson.product_id;
+  const seller     = parsedJson.seller;
+  const price      = parsedJson.price;
+  const timestamp  = parsedJson.timestamp;
 
   console.log(`📦 ProductListed: ${productId}`);
 
@@ -72,12 +66,7 @@ async function handleProductListed(event: any) {
     const resellable        = fields.resellable       || false;
     const fileCid           = fields.file_cid         || '';
 
-    console.log(`   Title:      ${title}`);
-    console.log(`   Category:   ${category}`);
-    console.log(`   Quantity:   ${quantityAvailable}`);
-    console.log(`   Active:     ${isActive}`);
-    console.log(`   Resellable: ${resellable}`);
-    console.log(`   File CID:   ${fileCid}`);
+    console.log(`   Title: ${title} | Resellable: ${resellable} | File: ${fileCid}`);
 
     await pool.query(
       `INSERT INTO products (
@@ -99,31 +88,15 @@ async function handleProductListed(event: any) {
          file_cid           = EXCLUDED.file_cid,
          updated_at         = EXCLUDED.updated_at`,
       [
-        productId,
-        seller,
-        title,
-        description,
-        price,
-        imageUrl,
-        category,
-        isActive,
-        0,                  // total_sales
-        0,                  // rating_sum
-        0,                  // rating_count
-        quantityAvailable,  // quantity
-        quantityAvailable,  // available_quantity
-        resellable,
-        fileCid,
-        Number(timestamp),
-        Number(timestamp),
+        productId, seller, title, description, price, imageUrl, category,
+        isActive, 0, 0, 0, quantityAvailable, quantityAvailable,
+        resellable, fileCid, Number(timestamp), Number(timestamp),
       ]
     );
 
-    // Ensure seller row exists
     await pool.query(
       `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned)
-       VALUES ($1, 0, 0, 0, FALSE)
-       ON CONFLICT (address) DO NOTHING`,
+       VALUES ($1, 0, 0, 0, FALSE) ON CONFLICT (address) DO NOTHING`,
       [seller]
     );
 
@@ -142,19 +115,15 @@ async function handleProductPurchased(event: any) {
   const platformFee = parsedJson.platform_fee;
   const timestamp   = parsedJson.timestamp;
   const quantity    = Number(parsedJson.quantity) || 1;
-
-  const purchaseId = `${event.id.txDigest}-${event.id.eventSeq}`;
+  const purchaseId  = `${event.id.txDigest}-${event.id.eventSeq}`;
 
   console.log(`💰 ProductPurchased: ${productId} by ${buyer}`);
 
-  // Decrement quantity, mark inactive if sold out
+  // Update product quantity
   await pool.query(
     `UPDATE products
      SET available_quantity = GREATEST(available_quantity - $1, 0),
-         is_available = CASE
-           WHEN (available_quantity - $1) <= 0 THEN FALSE
-           ELSE is_available
-         END,
+         is_available = CASE WHEN (available_quantity - $1) <= 0 THEN FALSE ELSE is_available END,
          total_sales = total_sales + $1,
          updated_at  = $2
      WHERE id = $3`,
@@ -163,31 +132,79 @@ async function handleProductPurchased(event: any) {
 
   // Record purchase
   await pool.query(
-    `INSERT INTO purchases
-       (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-     ON CONFLICT (id) DO NOTHING`,
-    [
-      purchaseId,
-      productId,
-      buyer,
-      seller,
-      price,
-      platformFee,
-      event.id.txDigest,
-      Number(timestamp),
-    ]
+    `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+    [purchaseId, productId, buyer, seller, price, platformFee, event.id.txDigest, Number(timestamp)]
   );
 
   // Update seller stats
   await pool.query(
-    `UPDATE sellers
-     SET total_sales   = total_sales + 1,
-         total_revenue = total_revenue + $1,
-         updated_at    = NOW()
-     WHERE address = $2`,
+    `UPDATE sellers SET total_sales = total_sales + 1, total_revenue = total_revenue + $1, updated_at = NOW() WHERE address = $2`,
     [price, seller]
   );
+
+  // ── Create ownership token for resellable products ──────────────────────
+  const productCheck = await pool.query(
+    'SELECT resellable, file_cid FROM products WHERE id = $1',
+    [productId]
+  );
+
+  if (productCheck.rows.length > 0 && productCheck.rows[0].resellable) {
+    console.log(`🎫 Creating ownership token for resellable product: ${productId}`);
+
+    // Query the buyer's owned OwnershipToken objects to get the real on-chain token ID
+    let tokenId: string | null = null;
+
+    try {
+      const ownedObjects = await suiClient.getOwnedObjects({
+        owner: buyer,
+        filter: {
+          StructType: `${PACKAGE_ID}::marketplace::OwnershipToken`,
+        },
+        options: { showContent: true },
+      });
+
+      // Find the token for this specific product
+      const matchingToken = ownedObjects.data.find((obj) => {
+        const content = obj.data?.content as any;
+        return content?.fields?.original_product_id === productId;
+      });
+
+      if (matchingToken?.data?.objectId) {
+        tokenId = matchingToken.data.objectId;
+        console.log(`   Found on-chain token: ${tokenId}`);
+      }
+    } catch (err) {
+      console.warn(`   Could not fetch on-chain token, generating synthetic ID`);
+    }
+
+    // Fallback: generate a deterministic token ID if on-chain query fails
+    if (!tokenId) {
+      tokenId = `${event.id.txDigest}_${productId}_${buyer}`.slice(0, 66);
+      console.log(`   Using synthetic token ID: ${tokenId}`);
+    }
+
+    await pool.query(
+      `INSERT INTO ownership_tokens (
+         token_id, original_product_id, current_owner,
+         previous_owner, original_seller, purchase_price,
+         purchase_timestamp, is_listed_for_resale, resale_price, file_cid
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,false,0,$8)
+       ON CONFLICT (token_id) DO NOTHING`,
+      [
+        tokenId,
+        productId,
+        buyer,
+        seller,    // previous_owner = original seller
+        seller,    // original_seller
+        price,
+        Number(timestamp),
+        productCheck.rows[0].file_cid || '',
+      ]
+    );
+
+    console.log(`✅ Ownership token created: ${tokenId}`);
+  }
 
   console.log(`✅ Purchase recorded: ${purchaseId}`);
 }
@@ -205,96 +222,140 @@ async function handleProductReviewed(event: any) {
   await pool.query(
     `INSERT INTO reviews (product_id, reviewer, rating, comment, created_at)
      VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (product_id, reviewer) DO UPDATE SET
-       rating  = EXCLUDED.rating,
-       comment = EXCLUDED.comment`,
+     ON CONFLICT (product_id, reviewer) DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment`,
     [productId, reviewer, rating, comment, Number(timestamp)]
   );
 
-  // Recalculate rating stats from reviews table
   await pool.query(
     `UPDATE products
      SET rating_sum   = (SELECT COALESCE(SUM(rating), 0) FROM reviews WHERE product_id = $1),
-         rating_count = (SELECT COUNT(*)                 FROM reviews WHERE product_id = $1),
+         rating_count = (SELECT COUNT(*) FROM reviews WHERE product_id = $1),
          updated_at   = $2
      WHERE id = $1`,
     [productId, Number(timestamp)]
   );
 
-  console.log(`✅ Review recorded for ${productId}`);
+  console.log(`✅ Review recorded`);
 }
 
 async function handleSellerProfileCreated(event: any) {
   const parsedJson = event.parsedJson as any;
-  const seller     = parsedJson.seller;
-
-  console.log(`👤 SellerProfileCreated: ${seller}`);
+  console.log(`👤 SellerProfileCreated: ${parsedJson.seller}`);
 
   await pool.query(
     `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned)
-     VALUES ($1, 0, 0, 0, FALSE)
-     ON CONFLICT (address) DO NOTHING`,
-    [seller]
+     VALUES ($1, 0, 0, 0, FALSE) ON CONFLICT (address) DO NOTHING`,
+    [parsedJson.seller]
   );
 
-  console.log(`✅ Seller profile created: ${seller}`);
+  console.log(`✅ Seller profile created`);
+}
+
+async function handleResaleListed(event: any) {
+  const fields = event.parsedJson as any;
+  console.log(`📋 ResaleListed: ${fields.listing_id}`);
+
+  await pool.query(
+    `INSERT INTO resale_listings (listing_id, token_id, seller, price, original_product_id, is_active, created_at)
+     VALUES ($1,$2,$3,$4,$5,true,$6)
+     ON CONFLICT (listing_id) DO UPDATE SET price = EXCLUDED.price, is_active = true`,
+    [fields.listing_id, fields.token_id, fields.seller, fields.price, fields.original_product_id || '', Number(fields.timestamp)]
+  );
+
+  await pool.query(
+    `UPDATE ownership_tokens SET is_listed_for_resale = true, resale_price = $1 WHERE token_id = $2`,
+    [fields.price, fields.token_id]
+  );
+
+  console.log(`✅ Resale listing stored`);
+}
+
+async function handleResalePurchased(event: any) {
+  const fields    = event.parsedJson as any;
+  const purchaseId = `${event.id.txDigest}-${event.id.eventSeq}`;
+  console.log(`💰 ResalePurchased: token ${fields.token_id}`);
+
+  await pool.query(
+    `UPDATE resale_listings SET is_active = false WHERE listing_id = $1`,
+    [fields.listing_id]
+  );
+
+  await pool.query(
+    `UPDATE ownership_tokens
+     SET current_owner = $1, previous_owner = $2,
+         is_listed_for_resale = false, resale_price = 0,
+         purchase_price = $3, purchase_timestamp = $4
+     WHERE token_id = $5`,
+    [fields.buyer, fields.seller, fields.price, Number(fields.timestamp), fields.token_id]
+  );
+
+  // New buyer gets a purchase record so they can download
+  await pool.query(
+    `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
+     VALUES ($1,$2,$3,$4,$5,0,$6,$7) ON CONFLICT (id) DO NOTHING`,
+    [purchaseId, fields.original_product_id, fields.buyer, fields.seller, fields.price, event.id.txDigest, Number(fields.timestamp)]
+  );
+
+  console.log(`✅ Resale purchase recorded`);
+}
+
+async function handleResaleDelisted(event: any) {
+  const fields = event.parsedJson as any;
+  console.log(`🗑️ ResaleDelisted: ${fields.listing_id}`);
+
+  await pool.query(
+    `UPDATE resale_listings SET is_active = false WHERE listing_id = $1`,
+    [fields.listing_id]
+  );
+
+  // ✅ Mark token as no longer listed so it can be found again
+  await pool.query(
+    `UPDATE ownership_tokens 
+     SET is_listed_for_resale = false, resale_price = 0 
+     WHERE token_id = $1`,
+    [fields.token_id]
+  );
+
+  console.log(`✅ Resale delisted, token available again`);
 }
 
 // ── Main polling loop ─────────────────────────────────────────────────────────
 
 async function processEvents() {
   try {
-    let cursor: any     = await getSavedCursor();
-    let hasNextPage     = true;
-    let totalProcessed  = 0;
+    let cursor: any    = await getSavedCursor();
+    let hasNextPage    = true;
+    let totalProcessed = 0;
 
     while (hasNextPage) {
       const events = await suiClient.queryEvents({
-        query: {
-          MoveEventModule: {
-            package: PACKAGE_ID,
-            module: 'marketplace',
-          },
-        },
+        query: { MoveEventModule: { package: PACKAGE_ID, module: 'marketplace' } },
         cursor,
         order: 'ascending',
         limit: 50,
       });
 
-      if (!events.data || events.data.length === 0) {
-        break;
-      }
+      if (!events.data || events.data.length === 0) break;
 
-      console.log(`\n📊 Fetched ${events.data.length} events (cursor: ${cursor ? 'set' : 'start'})`);
+      console.log(`\n📊 Fetched ${events.data.length} events`);
 
-      for (const event of events.data) {
-        const eventType = event.type.split('::').pop();
+      for (const suiEvent of events.data) {
+        const eventType = suiEvent.type.split('::').pop();
 
         switch (eventType) {
-          case 'ProductListed':
-            await handleProductListed(event);
-            break;
-
-          case 'ProductPurchased':
-            await handleProductPurchased(event);
-            break;
-
-          case 'ProductReviewed':
-            await handleProductReviewed(event);
-            break;
-
-          case 'SellerProfileCreated':
-            await handleSellerProfileCreated(event);
-            break;
-
-          default:
-            console.log(`ℹ️  Unknown event type: ${eventType}`);
+          case 'ProductListed':        await handleProductListed(suiEvent);        break;
+          case 'ProductPurchased':     await handleProductPurchased(suiEvent);     break;
+          case 'ProductReviewed':      await handleProductReviewed(suiEvent);      break;
+          case 'SellerProfileCreated': await handleSellerProfileCreated(suiEvent); break;
+          case 'ResaleListed':         await handleResaleListed(suiEvent);         break;
+          case 'ResalePurchased':      await handleResalePurchased(suiEvent);      break;
+          case 'ResaleDelisted':       await handleResaleDelisted(suiEvent);       break;
+          default: console.log(`ℹ️  Unknown event: ${eventType}`);
         }
 
         totalProcessed++;
       }
 
-      // Save cursor after each page so we don't reprocess on restart
       if (events.nextCursor) {
         cursor = events.nextCursor;
         await saveCursor(cursor);
@@ -303,12 +364,10 @@ async function processEvents() {
       hasNextPage = events.hasNextPage;
     }
 
-    if (totalProcessed > 0) {
-      console.log(`\n✅ Processed ${totalProcessed} events total`);
-    }
+    if (totalProcessed > 0) console.log(`\n✅ Processed ${totalProcessed} events total`);
   } catch (error: any) {
     if (error.status === 504 || error.status === 503) {
-      console.log('⚠️  RPC timeout, will retry on next poll...');
+      console.log('⚠️  RPC timeout, retrying...');
       return;
     }
     console.error('❌ Error processing events:', error);
@@ -322,17 +381,42 @@ async function startIndexer() {
 
   await initializeDatabase();
 
-  // Ensure last_event_cursor column exists
-  await pool.query(`
-    ALTER TABLE indexer_state
-    ADD COLUMN IF NOT EXISTS last_event_cursor TEXT
-  `);
+  await pool.query(`ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_event_cursor TEXT`);
 
-  // Ensure indexer_state row exists
   await pool.query(`
     INSERT INTO indexer_state (id, last_processed_checkpoint, updated_at)
-    VALUES (1, 0, NOW())
-    ON CONFLICT (id) DO NOTHING
+    VALUES (1, 0, NOW()) ON CONFLICT (id) DO NOTHING
+  `);
+
+  // Ensure resale tables exist
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS resale_listings (
+      listing_id TEXT PRIMARY KEY,
+      token_id TEXT NOT NULL,
+      seller TEXT NOT NULL,
+      price BIGINT NOT NULL,
+      original_product_id TEXT NOT NULL,
+      is_active BOOLEAN DEFAULT true,
+      created_at BIGINT,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ownership_tokens (
+      token_id TEXT PRIMARY KEY,
+      original_product_id TEXT NOT NULL,
+      current_owner TEXT NOT NULL,
+      previous_owner TEXT,
+      original_seller TEXT NOT NULL,
+      purchase_price BIGINT,
+      purchase_timestamp BIGINT,
+      is_listed_for_resale BOOLEAN DEFAULT false,
+      resale_price BIGINT DEFAULT 0,
+      file_cid TEXT,
+      created_at BIGINT,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
   `);
 
   console.log('🔄 Running initial event sync...');

@@ -1,6 +1,4 @@
 /// Secure Social Commerce Platform on Sui
-/// Implements object-native marketplace with social features
-/// Security features: Access control, reentrancy protection, overflow checks
 module sui_commerce::marketplace {
     use sui::object::{Self, UID, ID};
     use sui::transfer;
@@ -9,11 +7,9 @@ module sui_commerce::marketplace {
     use sui::sui::SUI;
     use sui::balance::{Self, Balance};
     use sui::event;
-    use sui::vec_map::{Self, VecMap};
     use std::string::{Self, String};
     use std::vector;
     use sui::clock::{Self, Clock};
-    use sui::dynamic_object_field as dof;
     use sui::dynamic_field as df;
 
     // ======== Error Codes ========
@@ -28,16 +24,20 @@ module sui_commerce::marketplace {
     const EPlatformFeeOverflow: u64 = 8;
     const EProductSoldOut: u64 = 9;
     const EInvalidQuantity: u64 = 10;
+    const ENotTokenOwner: u64 = 11;
+    const EAlreadyListedForResale: u64 = 12;
+    const ENotListedForResale: u64 = 13;
 
     // ======== Constants ========
     const PLATFORM_FEE_BPS: u64 = 200;
+    const ROYALTY_FEE_BPS: u64 = 250;
     const MAX_FEE_BPS: u64 = 10000;
     const MIN_RATING: u8 = 1;
     const MAX_RATING: u8 = 5;
     const MAX_DESCRIPTION_LENGTH: u64 = 1000;
     const MAX_REVIEW_LENGTH: u64 = 500;
 
-    // ======== Structs ========
+    // ======== Core Structs ========
 
     public struct MARKETPLACE has drop {}
 
@@ -107,6 +107,32 @@ module sui_commerce::marketplace {
         tier: u8,
     }
 
+    // ======== Resellable Product Structs ========
+
+    public struct OwnershipToken has key, store {
+        id: UID,
+        original_product_id: ID,
+        current_owner: address,
+        previous_owner: address,
+        original_seller: address,
+        purchase_price: u64,
+        purchase_timestamp: u64,
+        is_listed_for_resale: bool,
+        resale_price: u64,
+        file_cid: String,
+    }
+
+    /// ✅ Token is stored INSIDE the listing — buyer never needs to own it
+    public struct ResaleListing has key, store {
+        id: UID,
+        token: OwnershipToken,      // ← token lives here, not in seller's wallet
+        seller: address,
+        price: u64,
+        original_product_id: ID,
+        original_seller: address,
+        listed_at: u64,
+    }
+
     // ======== Events ========
 
     public struct ProductListed has copy, drop {
@@ -138,9 +164,35 @@ module sui_commerce::marketplace {
         timestamp: u64,
     }
 
+    public struct ResaleListed has copy, drop {
+        listing_id: ID,
+        token_id: ID,
+        seller: address,
+        price: u64,
+        original_product_id: ID,
+        timestamp: u64,
+    }
+
+    public struct ResalePurchased has copy, drop {
+        token_id: ID,
+        listing_id: ID,
+        buyer: address,
+        seller: address,
+        price: u64,
+        original_product_id: ID,
+        timestamp: u64,
+    }
+
+    public struct ResaleDelisted has copy, drop {
+        listing_id: ID,
+        token_id: ID,
+        seller: address,
+        timestamp: u64,
+    }
+
     // ======== Initialization ========
 
-    fun init(witness: MARKETPLACE, ctx: &mut TxContext) {
+    fun init(_witness: MARKETPLACE, ctx: &mut TxContext) {
         let platform = Platform {
             id: object::new(ctx),
             admin: tx_context::sender(ctx),
@@ -283,19 +335,36 @@ module sui_commerce::marketplace {
         let seller_coin = coin::from_balance(payment_balance, ctx);
         transfer::public_transfer(seller_coin, product.seller);
 
-        // Update product state
         product.quantity_available = product.quantity_available - quantity;
         product.total_sold = product.total_sold + quantity;
 
-        // Mark inactive if sold out
         if (product.quantity_available == 0) {
             product.is_active = false;
+        };
+
+        let buyer = tx_context::sender(ctx);
+
+        // Issue ownership token for resellable products
+        if (product.resellable) {
+            let token = OwnershipToken {
+                id: object::new(ctx),
+                original_product_id: object::uid_to_inner(&product.id),
+                current_owner: buyer,
+                previous_owner: product.seller,
+                original_seller: product.seller,
+                purchase_price: total_price,
+                purchase_timestamp: clock::timestamp_ms(clock),
+                is_listed_for_resale: false,
+                resale_price: 0,
+                file_cid: product.file_cid,
+            };
+            transfer::transfer(token, buyer);
         };
 
         let receipt = PurchaseReceipt {
             id: object::new(ctx),
             product_id: object::uid_to_inner(&product.id),
-            buyer: tx_context::sender(ctx),
+            buyer,
             seller: product.seller,
             amount_paid: total_price,
             platform_fee,
@@ -305,7 +374,7 @@ module sui_commerce::marketplace {
 
         event::emit(ProductPurchased {
             product_id: object::uid_to_inner(&product.id),
-            buyer: tx_context::sender(ctx),
+            buyer,
             seller: product.seller,
             price: total_price,
             quantity,
@@ -313,8 +382,169 @@ module sui_commerce::marketplace {
             timestamp: clock::timestamp_ms(clock),
         });
 
-        transfer::transfer(receipt, tx_context::sender(ctx));
+        transfer::transfer(receipt, buyer);
     }
+
+    // ======== Resale Functions ========
+
+    /// Seller passes their token — it gets consumed into the listing
+    public entry fun list_for_resale(
+        token: OwnershipToken,          // ← consumed (not &mut)
+        price: u64,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let sender = tx_context::sender(ctx);
+
+        assert!(token.current_owner == sender, ENotTokenOwner);
+        assert!(!token.is_listed_for_resale, EAlreadyListedForResale);
+        assert!(price > 0, EInvalidPrice);
+
+        let token_id            = object::uid_to_inner(&token.id);
+        let original_product_id = token.original_product_id;
+        let original_seller     = token.original_seller;
+
+        let listing_uid      = object::new(ctx);
+        let listing_id_copy  = object::uid_to_inner(&listing_uid);
+
+        let listing = ResaleListing {
+            id: listing_uid,
+            token,                  // ← token stored inside listing
+            seller: sender,
+            price,
+            original_product_id,
+            original_seller,
+            listed_at: clock::timestamp_ms(clock),
+        };
+
+        transfer::share_object(listing);
+
+        event::emit(ResaleListed {
+            listing_id: listing_id_copy,
+            token_id,
+            seller: sender,
+            price,
+            original_product_id,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    /// Cancel listing — token returned to seller
+    public entry fun delist_resale(
+        listing: ResaleListing,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let sender = tx_context::sender(ctx);
+        assert!(listing.seller == sender, EUnauthorized);
+
+        let ResaleListing {
+            id,
+            token,
+            seller: _,
+            price: _,
+            original_product_id: _,
+            original_seller: _,
+            listed_at: _,
+        } = listing;
+
+        let token_id   = object::uid_to_inner(&token.id);
+        let listing_id = object::uid_to_inner(&id);
+
+        // Return token to seller
+        transfer::transfer(token, sender);
+        object::delete(id);
+
+        event::emit(ResaleDelisted {
+            listing_id,
+            token_id,
+            seller: sender,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    /// Buy a resale — only needs listing, no separate token arg
+    public entry fun purchase_resale(
+        platform: &mut Platform,
+        listing: ResaleListing,
+        payment: Coin<SUI>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let buyer = tx_context::sender(ctx);
+        assert!(buyer != listing.seller, EUnauthorized);
+
+        let price = listing.price;
+        assert!(coin::value(&payment) == price, EInsufficientPayment);
+
+        let platform_fee = calculate_fee(price, platform.platform_fee_bps);
+        let royalty_fee  = calculate_fee(price, ROYALTY_FEE_BPS);
+        assert!(platform_fee + royalty_fee <= price, EPlatformFeeOverflow);
+
+        let mut payment_balance = coin::into_balance(payment);
+        let fee_balance         = balance::split(&mut payment_balance, platform_fee);
+        let royalty_balance     = balance::split(&mut payment_balance, royalty_fee);
+
+        balance::join(&mut platform.treasury, fee_balance);
+        platform.total_sales = platform.total_sales + 1;
+
+        let royalty_coin = coin::from_balance(royalty_balance, ctx);
+        transfer::public_transfer(royalty_coin, listing.original_seller);
+
+        let seller_coin = coin::from_balance(payment_balance, ctx);
+        transfer::public_transfer(seller_coin, listing.seller);
+
+        // Destructure listing to get token out
+        let ResaleListing {
+            id,
+            mut token,
+            seller,
+            price: _,
+            original_product_id,
+            original_seller: _,
+            listed_at: _,
+        } = listing;
+
+        let token_id   = object::uid_to_inner(&token.id);
+        let listing_id = object::uid_to_inner(&id);
+
+        // Transfer ownership
+        token.previous_owner       = token.current_owner;
+        token.current_owner        = buyer;
+        token.is_listed_for_resale = false;
+        token.resale_price         = 0;
+        token.purchase_price       = price;
+        token.purchase_timestamp   = clock::timestamp_ms(clock);
+
+        // Transfer token to new owner
+        transfer::transfer(token, buyer);
+        object::delete(id);
+
+        // Issue receipt to buyer
+        let receipt = PurchaseReceipt {
+            id: object::new(ctx),
+            product_id: original_product_id,
+            buyer,
+            seller,
+            amount_paid: price,
+            platform_fee,
+            quantity: 1,
+            timestamp: clock::timestamp_ms(clock),
+        };
+        transfer::transfer(receipt, buyer);
+
+        event::emit(ResalePurchased {
+            token_id,
+            listing_id,
+            buyer,
+            seller,
+            price,
+            original_product_id,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    // ======== Review Functions ========
 
     public entry fun review_product(
         product: &mut Product,
@@ -396,7 +626,6 @@ module sui_commerce::marketplace {
         ctx: &mut TxContext
     ) {
         assert!(platform.admin == tx_context::sender(ctx), EUnauthorized);
-
         let withdrawn = balance::split(&mut platform.treasury, amount);
         let coin = coin::from_balance(withdrawn, ctx);
         transfer::public_transfer(coin, platform.admin);
@@ -409,7 +638,6 @@ module sui_commerce::marketplace {
     ) {
         assert!(platform.admin == tx_context::sender(ctx), EUnauthorized);
         assert!(new_fee_bps <= MAX_FEE_BPS, EPlatformFeeOverflow);
-
         platform.platform_fee_bps = new_fee_bps;
     }
 
@@ -433,28 +661,20 @@ module sui_commerce::marketplace {
     // ======== View Functions ========
 
     public fun get_product_rating(product: &Product): u64 {
-        if (product.review_count == 0) {
-            return 0
-        };
+        if (product.review_count == 0) { return 0 };
         product.total_rating_sum / product.review_count
     }
 
     public fun get_product_details(product: &Product): (address, u64, u64, bool, u64) {
-        (
-            product.seller,
-            product.price,
-            product.quantity_available,
-            product.is_active,
-            product.review_count
-        )
+        (product.seller, product.price, product.quantity_available, product.is_active, product.review_count)
     }
 
     public fun get_seller_stats(profile: &SellerProfile): (u64, u64, bool) {
-        (
-            profile.total_sales,
-            profile.average_rating,
-            profile.is_verified
-        )
+        (profile.total_sales, profile.average_rating, profile.is_verified)
+    }
+
+    public fun get_token_details(token: &OwnershipToken): (ID, address, address, u64, bool, u64) {
+        (token.original_product_id, token.current_owner, token.original_seller, token.purchase_price, token.is_listed_for_resale, token.resale_price)
     }
 
     // ======== Test Functions ========
