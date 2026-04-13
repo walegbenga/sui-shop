@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { ShoppingBag, Plus, Star, TrendingUp, Users, Shield } from 'lucide-react';
-import { useFetchProducts, useListProduct, usePurchaseProduct } from '../hooks/useSuiTransactions';
+import { useFetchProducts/*, useListProduct, usePurchaseProduct*/ } from '../hooks/useSuiTransactions';
 import { mistToSui } from '../utils/security';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 
 export default function MarketplacePage() {
   const { products, loading, refetch } = useFetchProducts();
-  const { purchaseProduct, loading: purchasing } = usePurchaseProduct();
+  //const { purchaseProduct, loading: purchasing } = usePurchaseProduct();
   const account = useCurrentAccount();
   
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -18,11 +18,11 @@ export default function MarketplacePage() {
     ? products 
     : products.filter(p => p.category === selectedCategory);
 
-  const handlePurchase = async (productId: string, price: string) => {
+  /*const handlePurchase = async (productId: string, price: string) => {
     const priceInSui = mistToSui(price);
     await purchaseProduct(productId, priceInSui);
     refetch();
-  };
+  };*/
 
   const calculateRating = (ratingSum: string, ratingCount: string) => {
     const sum = parseInt(ratingSum);
