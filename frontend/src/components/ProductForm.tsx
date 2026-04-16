@@ -6,6 +6,7 @@ import { bcs } from '@mysten/sui/bcs';
 import toast from 'react-hot-toast';
 import LoadingButton from './LoadingButton';
 import { promise } from 'zod';
+import { API_BASE_URL } from '@/config/api';
 
 const CATEGORIES = ['Electronics', 'Fashion', 'Home', 'Sports', 'Books', 'Other'];
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
@@ -44,7 +45,7 @@ export default function ProductForm({ productId }: ProductFormProps) {
 
   const fetchProduct = async () => {
     try {
-      const response = await fetch(`http://localhost:4000/api/products/${productId}`);
+      const response = await fetch(`${API_BASE_URL}/api/products/${productId}`);
       const data = await response.json();
 
       if (data.seller !== account?.address) {
@@ -79,7 +80,7 @@ export default function ProductForm({ productId }: ProductFormProps) {
       uploadFormData.append('file', selectedFile);
       uploadFormData.append('seller', account!.address);
 
-      const response = await fetch('http://localhost:4000/api/upload', {
+      const response = await fetch(`${API_BASE_URL}/api/upload`, {
         method: 'POST',
         body: uploadFormData,
       });
@@ -184,7 +185,7 @@ export default function ProductForm({ productId }: ProductFormProps) {
   const handleUpdate = async () => {
     const priceInMist = Math.floor(Number(formData.price) * 1_000_000_000);
 
-    const response = await fetch(`http://localhost:4000/api/products/${productId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/products/${productId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

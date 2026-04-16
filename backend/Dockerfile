@@ -1,23 +1,49 @@
 # Backend Dockerfile
-FROM node:18-alpine
+#FROM node:18-alpine
 
 # Set working directory
-WORKDIR /app
+#WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+#COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
+#RUN npm install --production
 
 # Copy source code
+#COPY . .
+
+# Expose port
+#EXPOSE 3001
+
+# Set environment to production
+#ENV NODE_ENV=production
+
+# Start server
+#CMD ["npm", "start"]
+
+
+
+
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+
+# Install ALL deps (needed for build)
+RUN npm install
+
 COPY . .
 
 # Expose port
 EXPOSE 3001
 
-# Set environment to production
-ENV NODE_ENV=production
+# 🔥 Build TypeScript
+RUN npm run build
 
-# Start server
+# Optional: remove dev deps to reduce size
+RUN npm prune --production
+
 CMD ["npm", "start"]

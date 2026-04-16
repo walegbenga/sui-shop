@@ -9,6 +9,7 @@ import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useFavoriteProduct } from '@/hooks/useSocialFeatures';
 import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
+import { API_BASE_URL } from '@/config/api';
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
@@ -219,7 +220,7 @@ export default function Home() {
       if (selectedPriceRange.max !== null) params.append('maxPrice', selectedPriceRange.max.toString());
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
-      const response = await fetch(`http://localhost:4000/api/products?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/products?${params}`);
       const data = await response.json();
 
       setProducts(data.products || []);
@@ -234,7 +235,7 @@ export default function Home() {
   const fetchResaleListings = async () => {
     setResaleLoading(true);
     try {
-      const response = await fetch('http://localhost:4000/api/resale-listings');
+      const response = await fetch(`${API_BASE_URL}/api/resale-listings`);
       const data = await response.json();
       setResaleListings(data.listings || []);
     } catch (error) {

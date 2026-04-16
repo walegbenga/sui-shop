@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
+import { API_BASE_URL } from '@/config/api';
 
 interface SellerProfile {
   address: string;
@@ -39,7 +40,7 @@ export default function Profile() {
     if (!account?.address) return;
 
     try {
-      const response = await fetch(`http://localhost:4000/api/sellers/${account.address}`);
+      const response = await fetch(`${API_BASE_URL}/api/sellers/${account.address}`);
       if (response.ok) {
         const data = await response.json();
         setSellerProfile(data);
@@ -56,27 +57,27 @@ export default function Profile() {
 
     try {
       // Fetch products
-      const productsRes = await fetch(`http://localhost:4000/api/sellers/${account.address}/products`);
+      const productsRes = await fetch(`${API_BASE_URL}/api/sellers/${account.address}/products`);
       const productsData = await productsRes.json();
       const products = productsData.products || [];
 
       // Fetch purchases
-      const purchasesRes = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
+      const purchasesRes = await fetch(`${API_BASE_URL}/api/purchases/${account.address}`);
       const purchasesData = await purchasesRes.json();
       const purchases = purchasesData.purchases || [];
 
       // Fetch favorites
-      const favoritesRes = await fetch(`http://localhost:4000/api/users/${account.address}/favorites`);
+      const favoritesRes = await fetch(`${API_BASE_URL}/api/users/${account.address}/favorites`);
       const favoritesData = await favoritesRes.json();
       const favorites = favoritesData.favorites || [];
 
       // Fetch following
-      const followingRes = await fetch(`http://localhost:4000/api/users/${account.address}/following`);
+      const followingRes = await fetch(`${API_BASE_URL}/api/users/${account.address}/following`);
       const followingData = await followingRes.json();
       const following = followingData.following || [];
       
       // Fetch follower
-      const followersRes = await fetch(`http://localhost:4000/api/sellers/${account.address}/followers`);
+      const followersRes = await fetch(`${API_BASE_URL}/api/sellers/${account.address}/followers`);
       const followersData = await followersRes.json();
       const followers = followersData.followers || [];
 

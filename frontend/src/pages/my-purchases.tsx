@@ -3,6 +3,7 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import ProductDetailModal from '@/components/ProductDetailModal';
+import { API_BASE_URL } from '@/config/api';
 
 interface Purchase {
   id: string;
@@ -38,14 +39,14 @@ export default function MyPurchases() {
     if (!account?.address) return;
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:4000/api/purchases/${account.address}`);
+      const response = await fetch(`${API_BASE_URL}/api/purchases/${account.address}`);
       const data = await response.json();
 
       const purchasesWithProducts = await Promise.all(
         (data.purchases || []).map(async (purchase: Purchase) => {
           try {
             const productResponse = await fetch(
-              `http://localhost:4000/api/products/${purchase.product_id}`
+              `${API_BASE_URL}/api/products/${purchase.product_id}`
             );
             const productData = await productResponse.json();
             return {
@@ -89,7 +90,7 @@ export default function MyPurchases() {
     }
     
     // Just open the URL - backend handles everything
-    const downloadUrl = `http://localhost:4000/api/download/${productId}/${account.address}`;
+    const downloadUrl = `${API_BASE_URL}/api/download/${productId}/${account.address}`;
     window.open(downloadUrl, '_blank');
     toast.success('Download started! 📥');
   };

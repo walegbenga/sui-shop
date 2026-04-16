@@ -3,6 +3,7 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import ListItemSkeleton from '@/components/skeletons/ListItemSkeleton';
+import { API_BASE_URL } from '@/config/api';
 
 interface Product {
   id: string;
@@ -39,7 +40,7 @@ export default function MyProducts() {
     setLoading(true);
     try {
       const response = await fetch(
-        `http://localhost:4000/api/sellers/${account.address}/products`
+        `${API_BASE_URL}/api/sellers/${account.address}/products`
       );
       const data = await response.json();
 
@@ -74,7 +75,7 @@ export default function MyProducts() {
     if (!window.confirm(`Are you sure you want to delete "${productTitle}"?`)) return;
 
     try {
-      const response = await fetch(`http://localhost:4000/api/products/${productId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/products/${productId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seller: account?.address }),

@@ -3,6 +3,7 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import ProductDetailModal from '@/components/ProductDetailModal';
+import { API_BASE_URL } from '@/config/api';
 
 interface Favorite {
   product_id: string;
@@ -34,7 +35,7 @@ export default function Favorites() {
     setLoading(true);
     try {
       const response = await fetch(
-        `http://localhost:4000/api/users/${account.address}/favorites`
+        `${API_BASE_URL}/api/users/${account.address}/favorites`
       );
       const data = await response.json();
       setFavorites(data.favorites || []);
@@ -49,7 +50,7 @@ export default function Favorites() {
   const handleUnfavorite = async (productId: string) => {
     if (!account?.address) return;
     try {
-      const response = await fetch('http://localhost:4000/api/favorites', {
+      const response = await fetch(`${API_BASE_URL}/api/favorites`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

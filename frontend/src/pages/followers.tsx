@@ -1,6 +1,7 @@
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useState, useEffect } from 'react';
 import { UserGroupIcon } from '@heroicons/react/24/outline';
+import { API_BASE_URL } from '@/config/api';
 
 interface Follower {
   follower_address: string;
@@ -25,7 +26,7 @@ export default function Followers() {
 
     try {
       const response = await fetch(
-        `http://localhost:4000/api/sellers/${account.address}/followers`
+        `{API_BASE_URL}/api/sellers/${account.address}/followers`
       );
       const data = await response.json();
       setFollowers(data.followers || []);
