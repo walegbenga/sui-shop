@@ -4,16 +4,31 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 // PostgreSQL connection pool
-export const pool = new Pool({
-  host: '127.0.0.1',
-  port: 5432,
-  user: 'suishop',
-  password: 'suishop_password_2026',
-  database: 'suishop',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// Reads DATABASE_URL on Railway, falls back to local Docker credentials
+function createPool(): Pool {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    console.log(`DB URL USED: ${databaseUrl}`);
+    return new Pool({
+      connectionString: databaseUrl,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    });
+  }
+  return new Pool({
+    host:     process.env.PGHOST     || '127.0.0.1',
+    port:     Number(process.env.PGPORT) || 5432,
+    user:     process.env.PGUSER     || 'suishop',
+    password: process.env.PGPASSWORD || 'suishop_password_2026',
+    database: process.env.PGDATABASE || 'suishop',
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
+}
+export const pool = createPool();
 
 // Initialize database tables
 export async function initializeDatabase() {
@@ -130,19 +145,19 @@ export async function initializeDatabase() {
     `);
 
     // Indexer state table
+    // Uses last_event_cursor (Sui event cursor object) NOT last_processed_checkpoint
     await pool.query(`
       CREATE TABLE IF NOT EXISTS indexer_state (
         id INTEGER PRIMARY KEY DEFAULT 1,
-        last_processed_checkpoint BIGINT DEFAULT 0,
-        last_processed_tx TEXT,
+        last_event_cursor TEXT,
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
-    // Insert default indexer state if not exists
+    // Insert default indexer state row if not exists
     await pool.query(`
-      INSERT INTO indexer_state (id, last_processed_checkpoint)
-      VALUES (1, 0)
+      INSERT INTO indexer_state (id)
+      VALUES (1)
       ON CONFLICT (id) DO NOTHING
     `);
 

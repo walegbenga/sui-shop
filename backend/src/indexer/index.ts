@@ -381,11 +381,13 @@ async function startIndexer() {
 
   await initializeDatabase();
 
+  // Ensure last_event_cursor column exists (safe to run on existing DBs)
   await pool.query(`ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_event_cursor TEXT`);
 
+  // Seed the single indexer_state row if it doesn't exist yet
   await pool.query(`
-    INSERT INTO indexer_state (id, last_processed_checkpoint, updated_at)
-    VALUES (1, 0, NOW()) ON CONFLICT (id) DO NOTHING
+    INSERT INTO indexer_state (id, updated_at)
+    VALUES (1, NOW()) ON CONFLICT (id) DO NOTHING
   `);
 
   // Ensure resale tables exist
