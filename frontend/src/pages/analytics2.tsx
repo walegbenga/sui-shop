@@ -7,7 +7,7 @@ import {
   ArrowTrendingUpIcon 
 } from '@heroicons/react/24/outline';
 import StatsCardSkeleton from '@/components/skeletons/StatsCardSkeleton';
-import { API_URL } from '@/lib/api';
+import { API_BASE_URL } from '@/config/api';
 
 interface AnalyticsData {
   stats: {
@@ -56,7 +56,7 @@ export default function Analytics() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/sellers/${account.address}/analytics`);
+      const response = await fetch(`${API_BASE_URL}/api/sellers/${account.address}/analytics`);
       const data = await response.json();
       setAnalytics(data);
     } catch (error) {

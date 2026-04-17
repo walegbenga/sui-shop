@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { useFavoriteProduct, useFollowSeller } from '@/hooks/useSocialFeatures';
 import { useCart } from '@/contexts/CartContext';
 import AuthButton from './AuthButton';
-import { API_URL } from '@/lib/api';
+import { API_BASE_URL } from '@/config/api';
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
@@ -85,7 +85,7 @@ const checkUserListing = async () => {
   if (!account?.address || !productId) return;
   try {
     const response = await fetch(
-      `${API_URL}/api/resale-listings/user/${account.address}/${productId}`
+      `${API_BASE_URL}/api/resale-listings/user/${account.address}/${productId}`
     );
     if (response.ok) {
       const data = await response.json();
@@ -108,7 +108,7 @@ useEffect(() => {
     if (!productId) return;
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/products/${productId}`);
+      const response = await fetch(`${API_BASE_URL}/api/products/${productId}`);
       const data = await response.json();
       setProduct(data);
     } catch (error) {
@@ -122,7 +122,7 @@ useEffect(() => {
   const fetchReviews = async () => {
     if (!productId) return;
     try {
-      const response = await fetch(`${API_URL}/api/products/${productId}/reviews`);
+      const response = await fetch(`${API_BASE_URL}/api/products/${productId}/reviews`);
       const data = await response.json();
       setReviews(data.reviews || []);
     } catch (error) {
@@ -137,7 +137,7 @@ useEffect(() => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/purchases/${account.address}`);
+      const response = await fetch(`${API_BASE_URL}/api/purchases/${account.address}`);
       const data = await response.json();
       
       const purchased = (data.purchases || []).some(
@@ -256,7 +256,7 @@ useEffect(() => {
     toast.loading('Submitting review...', { id: 'review' });
 
     try {
-      const response = await fetch(`${API_URL}/api/reviews`, {
+      const response = await fetch('${API_BASE_URL}/api/reviews', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -324,7 +324,7 @@ useEffect(() => {
           // Step 2: Fetch the token back from the user's wallet
           try {
             const tokenResponse = await fetch(
-              `${API_URL}/api/ownership-token/${product?.id}/${account.address}`
+              `${API_BASE_URL}/api/ownership-token/${product?.id}/${account.address}`
             );
 
             // If not in DB yet, wait and retry once
@@ -337,7 +337,7 @@ useEffect(() => {
               // Wait for indexer to process delist event then retry
               await new Promise((resolve) => setTimeout(resolve, 5000));
               const retryResponse = await fetch(
-                `${API_URL}/api/ownership-token/${product?.id}/${account.address}`
+                `${API_BASE_URL}/api/ownership-token/${product?.id}/${account.address}`
               );
               if (retryResponse.ok) {
                 const { tokenId: id } = await retryResponse.json();
@@ -378,7 +378,7 @@ useEffect(() => {
                     attempts++;
                     try {
                       const response = await fetch(
-                        `${API_URL}/api/resale-listings/user/${currentUserAddress}/${currentProductId}`
+                        `${API_BASE_URL}/api/resale-listings/user/${currentUserAddress}/${currentProductId}`
                       );
                       if (response.status === 200) {
                         const data = await response.json();
@@ -422,7 +422,7 @@ useEffect(() => {
   }
   try {
     const response = await fetch(
-      `${API_URL}/api/ownership-token/${productId}/${account.address}`
+      `${API_BASE_URL}/api/ownership-token/${productId}/${account.address}`
     );
     setOwnsToken(response.ok);
   } catch {
@@ -442,7 +442,7 @@ useEffect(() => {
       return;
     }
 
-    const downloadUrl = `${API_URL}/api/download/${product.id}/${account.address}`;
+    const downloadUrl = `${API_BASE_URL}/api/download/${product.id}/${account.address}`;
     
     window.open(downloadUrl, '_blank');
     toast.success('Download started! 📥');
@@ -466,7 +466,7 @@ useEffect(() => {
     const priceInMist = Math.floor(Number(resalePrice) * 1_000_000_000);
 
     const tokenResponse = await fetch(
-      `${API_URL}/api/ownership-token/${product.id}/${account.address}`
+      `${API_BASE_URL}/api/ownership-token/${product.id}/${account.address}`
     );
 
     if (!tokenResponse.ok) {
@@ -510,7 +510,7 @@ useEffect(() => {
     attempts++;
     try {
       const response = await fetch(
-        `${API_URL}/api/resale-listings/user/${account?.address}/${product?.id}`
+        `${API_BASE_URL}/api/resale-listings/user/${account?.address}/${product?.id}`
       );
       console.log('Poll response status:', response.status);
       if (response.status === 200) {
@@ -573,7 +573,7 @@ useEffect(() => {
     attempts++;
     try {
       const response = await fetch(
-        `${API_URL}/api/resale-listings/user/${account?.address}/${product?.id}`
+        `${API_BASE_URL}/api/resale-listings/user/${account?.address}/${product?.id}`
       );
       if (!response.ok || (await response.json()).listing === null) {
         setUserListing(null);

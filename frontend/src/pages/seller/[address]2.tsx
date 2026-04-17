@@ -4,7 +4,7 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useFollowSeller } from '@/hooks/useSocialFeatures';
 import ProductDetailModal from '@/components/ProductDetailModal';
 import { UserIcon } from '@heroicons/react/24/outline';
-import { API_URL } from '@/lib/api';
+import { API_BASE_URL } from '@/config/api';
 
 export default function SellerProfile() {
   const router = useRouter();
@@ -33,12 +33,12 @@ export default function SellerProfile() {
 
     try {
       // Fetch seller info
-      const sellerRes = await fetch(`${API_URL}/api/sellers/${address}`);
+      const sellerRes = await fetch(`${API_BASE_URL}/api/sellers/${address}`);
       const sellerData = await sellerRes.json();
       setSeller(sellerData);
 
       // Fetch seller products
-      const productsRes = await fetch(`${API_URL}/api/sellers/${address}/products`);
+      const productsRes = await fetch(`${API_BASE_URL}/api/sellers/${address}/products`);
       const productsData = await productsRes.json();
       setProducts(productsData.products || []);
     } catch (error) {

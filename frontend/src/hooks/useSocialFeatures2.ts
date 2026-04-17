@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { API_URL } from '@/lib/api';
 
 // ==================== Follow/Unfollow Hooks ====================
 
@@ -19,7 +18,7 @@ export function useFollowSeller(sellerAddress: string | null, userAddress: strin
 
     try {
       const response = await fetch(
-        `${API_URL}/api/sellers/${sellerAddress}/following/${userAddress}`
+        `http://localhost:4000/api/sellers/${sellerAddress}/following/${userAddress}`
       );
       const data = await response.json();
       setIsFollowing(data.isFollowing);
@@ -39,7 +38,7 @@ export function useFollowSeller(sellerAddress: string | null, userAddress: strin
     try {
       const method = isFollowing ? 'DELETE' : 'POST';
       const response = await fetch(
-        `${API_URL}/api/sellers/${sellerAddress}/follow`,
+        `http://localhost:4000/api/sellers/${sellerAddress}/follow`,
         {
           method,
           headers: { 'Content-Type': 'application/json' },
@@ -80,7 +79,7 @@ export function useUserFollowing(userAddress: string | undefined) {
 
     try {
       const response = await fetch(
-        `${API_URL}/api/users/${userAddress}/following`
+        `http://localhost:4000/api/users/${userAddress}/following`
       );
       const data = await response.json();
       setFollowing(data.following || []);
@@ -111,7 +110,7 @@ export function useFavoriteProduct(productId: string | null, userAddress: string
 
     try {
       const response = await fetch(
-        `${API_URL}/api/favorites/check/${userAddress}/${productId}`
+        `http://localhost:4000/api/favorites/check/${userAddress}/${productId}`
       );
       const data = await response.json();
       setIsFavorited(data.isFavorited);
@@ -130,7 +129,7 @@ export function useFavoriteProduct(productId: string | null, userAddress: string
 
     try {
       const method = isFavorited ? 'DELETE' : 'POST';
-      const response = await fetch(`${API_URL}/api/favorites`, {
+      const response = await fetch('http://localhost:4000/api/favorites', {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userAddress, productId }),
@@ -169,7 +168,7 @@ export function useUserFavorites(userAddress: string | undefined) {
 
     try {
       const response = await fetch(
-        `${API_URL}/api/users/${userAddress}/favorites`
+        `http://localhost:4000/api/users/${userAddress}/favorites`
       );
       const data = await response.json();
       setFavorites(data.favorites || []);
