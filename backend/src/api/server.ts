@@ -19,7 +19,14 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    process.env.FRONTEND_URL || '',
+    /\.vercel\.app$/,
+  ].filter(Boolean),
+  credentials: true,
+}));
 app.use(express.json());
 
 // Configure multer for file uploads
