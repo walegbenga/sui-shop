@@ -74,7 +74,7 @@ async function handleProductListed(event: any) {
          is_available, total_sales, rating_sum, rating_count,
          quantity, available_quantity, resellable, file_cid,
          created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)
        ON CONFLICT (id) DO UPDATE SET
          title              = EXCLUDED.title,
          description        = EXCLUDED.description,
@@ -86,7 +86,7 @@ async function handleProductListed(event: any) {
          available_quantity = EXCLUDED.available_quantity,
          resellable         = EXCLUDED.resellable,
          file_cid           = EXCLUDED.file_cid,
-         updated_at         = NOW()`,
+         updated_at         = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000`,
       [
         productId, seller, title, description, price, imageUrl, category,
         isActive, 0, 0, 0, quantityAvailable, quantityAvailable,
@@ -125,7 +125,7 @@ async function handleProductPurchased(event: any) {
      SET available_quantity = GREATEST(available_quantity - $1, 0),
          is_available = CASE WHEN (available_quantity - $1) <= 0 THEN FALSE ELSE is_available END,
          total_sales = total_sales + $1,
-         updated_at  = NOW()
+         updated_at  = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000
      WHERE id = $2`,
     [quantity, productId]
   );
@@ -230,7 +230,7 @@ async function handleProductReviewed(event: any) {
     `UPDATE products
      SET rating_sum   = (SELECT COALESCE(SUM(rating), 0) FROM reviews WHERE product_id = $1),
          rating_count = (SELECT COUNT(*) FROM reviews WHERE product_id = $1),
-         updated_at   = NOW()
+         updated_at   = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000
      WHERE id = $1`,
     [productId]
   );
