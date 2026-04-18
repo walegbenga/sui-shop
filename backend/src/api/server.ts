@@ -1410,8 +1410,10 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
 
 // ==================== Start Server ====================
 
-app.listen(PORT, () => {
-  console.log(`🚀 API Server running on http://localhost:${PORT}`);
+// Bind to 0.0.0.0 so Railway (and any cloud host) can route traffic to the container
+// localhost/127.0.0.1 only accepts connections from inside the container — Railway needs 0.0.0.0
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`🚀 API Server running on 0.0.0.0:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🛍️  Products API: http://localhost:${PORT}/api/products`);
 });

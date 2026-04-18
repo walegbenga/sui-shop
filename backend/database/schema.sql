@@ -109,6 +109,59 @@ CREATE TABLE IF NOT EXISTS resale_listings (
   FOREIGN KEY (token_id) REFERENCES ownership_tokens(token_id)
 );
 
+-- ============================================================
+-- Railway DB Fix v2
+-- Run in Railway: Postgres → Data tab → Query
+-- ============================================================
+
+-- 1. Make display_name nullable so indexer can insert without it
+--    (sellers don't have display names on-chain, only in profiles)
+ALTER TABLE sellers
+  ALTER COLUMN display_name DROP NOT NULL,
+  ALTER COLUMN display_name SET DEFAULT '';
+
+-- 2. Make created_at nullable on sellers (indexer may not always have it)
+ALTER TABLE sellers
+  ALTER COLUMN created_at SET DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT * 1000;
+
+-- 3. Add missing product columns if not present
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS available_quantity INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS resellable BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS file_cid TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS file_name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0;
+
+-- 4. Add last_event_cursor to indexer_state
+ALTER TABLE indexer_state
+  ADD COLUMN IF NOT EXISTS last_event_cursor TEXT;
+
+-- 5. Add resale columns to ownership_tokens if missing
+ALTER TABLE ownership_tokens
+  ADD COLUMN IF NOT EXISTS file_cid TEXT DEFAULT '';
+
+-- 6. Ensure favorites and followers exist
+CREATE TABLE IF NOT EXISTS favorites (
+  user_address VARCHAR(66) NOT NULL,
+  product_id VARCHAR(66) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (user_address, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS followers (
+  follower_address VARCHAR(66) NOT NULL,
+  seller_address VARCHAR(66) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (follower_address, seller_address)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorites_user    ON favorites(user_address);
+CREATE INDEX IF NOT EXISTS idx_favorites_product ON favorites(product_id);
+CREATE INDEX IF NOT EXISTS idx_followers_seller  ON followers(seller_address);
+CREATE INDEX IF NOT EXISTS idx_followers_follower ON followers(follower_address);
+
+
 -- ==================== Indexes for Performance ====================
 
 -- Products indexes
@@ -166,3 +219,5 @@ FROM sellers s
 LEFT JOIN products p ON s.address = p.seller AND p.is_available = true
 GROUP BY s.address
 ORDER BY s.total_sales DESC;
+
+SELECT 'Railway DB fix v2 complete ✅' AS status;

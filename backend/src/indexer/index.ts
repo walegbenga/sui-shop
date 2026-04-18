@@ -74,7 +74,7 @@ async function handleProductListed(event: any) {
          is_available, total_sales, rating_sum, rating_count,
          quantity, available_quantity, resellable, file_cid,
          created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
        ON CONFLICT (id) DO UPDATE SET
          title              = EXCLUDED.title,
          description        = EXCLUDED.description,
@@ -86,18 +86,18 @@ async function handleProductListed(event: any) {
          available_quantity = EXCLUDED.available_quantity,
          resellable         = EXCLUDED.resellable,
          file_cid           = EXCLUDED.file_cid,
-         updated_at         = EXCLUDED.updated_at`,
+         updated_at         = NOW()`,
       [
         productId, seller, title, description, price, imageUrl, category,
         isActive, 0, 0, 0, quantityAvailable, quantityAvailable,
-        resellable, fileCid, Number(timestamp), Number(timestamp),
+        resellable, fileCid, Number(timestamp),
       ]
     );
 
     await pool.query(
-      `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned)
-       VALUES ($1, 0, 0, 0, FALSE) ON CONFLICT (address) DO NOTHING`,
-      [seller]
+      `INSERT INTO sellers (address, display_name, total_sales, total_revenue, follower_count, is_banned, created_at)
+       VALUES ($1, '', 0, 0, 0, FALSE, $2) ON CONFLICT (address) DO NOTHING`,
+      [seller, Number(timestamp)]
     );
 
     console.log(`✅ Product stored: ${title}`);
@@ -125,16 +125,16 @@ async function handleProductPurchased(event: any) {
      SET available_quantity = GREATEST(available_quantity - $1, 0),
          is_available = CASE WHEN (available_quantity - $1) <= 0 THEN FALSE ELSE is_available END,
          total_sales = total_sales + $1,
-         updated_at  = $2
-     WHERE id = $3`,
-    [quantity, Number(timestamp), productId]
+         updated_at  = NOW()
+     WHERE id = $2`,
+    [quantity, productId]
   );
 
   // Record purchase
   await pool.query(
-    `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
-    [purchaseId, productId, buyer, seller, price, platformFee, event.id.txDigest, Number(timestamp)]
+    `INSERT INTO purchases (product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tx_digest) DO NOTHING`,
+    [productId, buyer, seller, price, platformFee, event.id.txDigest, Number(timestamp)]
   );
 
   // Update seller stats
@@ -230,9 +230,9 @@ async function handleProductReviewed(event: any) {
     `UPDATE products
      SET rating_sum   = (SELECT COALESCE(SUM(rating), 0) FROM reviews WHERE product_id = $1),
          rating_count = (SELECT COUNT(*) FROM reviews WHERE product_id = $1),
-         updated_at   = $2
+         updated_at   = NOW()
      WHERE id = $1`,
-    [productId, Number(timestamp)]
+    [productId]
   );
 
   console.log(`✅ Review recorded`);
@@ -243,9 +243,9 @@ async function handleSellerProfileCreated(event: any) {
   console.log(`👤 SellerProfileCreated: ${parsedJson.seller}`);
 
   await pool.query(
-    `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned)
-     VALUES ($1, 0, 0, 0, FALSE) ON CONFLICT (address) DO NOTHING`,
-    [parsedJson.seller]
+    `INSERT INTO sellers (address, display_name, total_sales, total_revenue, follower_count, is_banned, created_at)
+     VALUES ($1, '', 0, 0, 0, FALSE, $2) ON CONFLICT (address) DO NOTHING`,
+    [parsedJson.seller, Number(parsedJson.timestamp) || Date.now()]
   );
 
   console.log(`✅ Seller profile created`);
@@ -291,9 +291,9 @@ async function handleResalePurchased(event: any) {
 
   // New buyer gets a purchase record so they can download
   await pool.query(
-    `INSERT INTO purchases (id, product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
-     VALUES ($1,$2,$3,$4,$5,0,$6,$7) ON CONFLICT (id) DO NOTHING`,
-    [purchaseId, fields.original_product_id, fields.buyer, fields.seller, fields.price, event.id.txDigest, Number(fields.timestamp)]
+    `INSERT INTO purchases (product_id, buyer, seller, price, platform_fee, tx_digest, created_at)
+     VALUES ($1,$2,$3,$4,0,$5,$6) ON CONFLICT (tx_digest) DO NOTHING`,
+    [fields.original_product_id, fields.buyer, fields.seller, fields.price, event.id.txDigest, Number(fields.timestamp)]
   );
 
   console.log(`✅ Resale purchase recorded`);
