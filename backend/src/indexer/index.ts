@@ -28,7 +28,7 @@ async function getSavedCursor(): Promise<any | null> {
 
 async function saveCursor(cursor: any) {
   await pool.query(
-    `UPDATE indexer_state SET last_event_cursor = $1, updated_at = NOW() WHERE id = 1`,
+    `UPDATE indexer_state SET last_event_cursor = $1, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000 WHERE id = 1`,
     [JSON.stringify(cursor)]
   );
 }
@@ -139,7 +139,7 @@ async function handleProductPurchased(event: any) {
 
   // Update seller stats
   await pool.query(
-    `UPDATE sellers SET total_sales = total_sales + 1, total_revenue = total_revenue + $1, updated_at = NOW() WHERE address = $2`,
+    `UPDATE sellers SET total_sales = total_sales + 1, total_revenue = total_revenue + $1, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000 WHERE address = $2`,
     [price, seller]
   );
 
@@ -387,7 +387,7 @@ async function startIndexer() {
   // Seed the single indexer_state row if it doesn't exist yet
   await pool.query(`
     INSERT INTO indexer_state (id, updated_at)
-    VALUES (1, NOW()) ON CONFLICT (id) DO NOTHING
+    VALUES (1, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000) ON CONFLICT (id) DO NOTHING
   `);
 
   // Ensure resale tables exist
@@ -400,7 +400,7 @@ async function startIndexer() {
       original_product_id TEXT NOT NULL,
       is_active BOOLEAN DEFAULT true,
       created_at BIGINT,
-      updated_at TIMESTAMP DEFAULT NOW()
+      updated_at BIGINT
     )
   `);
 
@@ -417,7 +417,7 @@ async function startIndexer() {
       resale_price BIGINT DEFAULT 0,
       file_cid TEXT,
       created_at BIGINT,
-      updated_at TIMESTAMP DEFAULT NOW()
+      updated_at BIGINT
     )
   `);
 
