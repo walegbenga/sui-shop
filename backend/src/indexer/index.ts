@@ -255,16 +255,34 @@ async function handleResaleListed(event: any) {
   const fields = event.parsedJson as any;
   console.log(`📋 ResaleListed: ${fields.listing_id}`);
 
+  // Ensure ownership token exists before inserting resale listing
+  // (may be missing if ProductPurchased event failed earlier)
   await pool.query(
-    `INSERT INTO resale_listings (listing_id, token_id, seller, price, original_product_id, is_active, created_at)
-     VALUES ($1,$2,$3,$4,$5,true,$6)
-     ON CONFLICT (listing_id) DO UPDATE SET price = EXCLUDED.price, is_active = true`,
-    [fields.listing_id, fields.token_id, fields.seller, fields.price, fields.original_product_id || '', Number(fields.timestamp)]
+    `INSERT INTO ownership_tokens (
+       token_id, original_product_id, current_owner,
+       previous_owner, original_seller, purchase_price,
+       purchase_timestamp, is_listed_for_resale, resale_price,
+       file_cid, created_at, updated_at
+     ) VALUES ($1,$2,$3,$4,$4,0,$5,true,$6,'',0,0)
+     ON CONFLICT (token_id) DO UPDATE SET
+       is_listed_for_resale = true,
+       resale_price = EXCLUDED.resale_price,
+       updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000`,
+    [
+      fields.token_id,
+      fields.original_product_id || '',
+      fields.seller,   // current_owner = seller (they listed it)
+      Number(fields.timestamp),
+      Number(fields.price),
+    ]
   );
 
+  // Now safe to insert resale listing — FK will be satisfied
   await pool.query(
-    `UPDATE ownership_tokens SET is_listed_for_resale = true, resale_price = $1 WHERE token_id = $2`,
-    [fields.price, fields.token_id]
+    `INSERT INTO resale_listings (listing_id, token_id, seller, price, original_product_id, is_active, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,true,$6,0)
+     ON CONFLICT (listing_id) DO UPDATE SET price = EXCLUDED.price, is_active = true`,
+    [fields.listing_id, fields.token_id, fields.seller, fields.price, fields.original_product_id || '', Number(fields.timestamp)]
   );
 
   console.log(`✅ Resale listing stored`);
@@ -400,7 +418,7 @@ async function startIndexer() {
       original_product_id TEXT NOT NULL,
       is_active BOOLEAN DEFAULT true,
       created_at BIGINT,
-      updated_at BIGINT
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
@@ -417,7 +435,7 @@ async function startIndexer() {
       resale_price BIGINT DEFAULT 0,
       file_cid TEXT,
       created_at BIGINT,
-      updated_at BIGINT
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
