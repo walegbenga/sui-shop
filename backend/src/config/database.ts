@@ -35,130 +35,175 @@ export async function initializeDatabase() {
   try {
     console.log('🔄 Initializing database schema...');
 
-    // Products table
+    await pool.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        seller TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        price BIGINT NOT NULL,
-        image_url TEXT NOT NULL,
-        category TEXT NOT NULL,
-        is_available BOOLEAN DEFAULT TRUE,
-        total_sales INTEGER DEFAULT 0,
-        rating_sum INTEGER DEFAULT 0,
-        rating_count INTEGER DEFAULT 0,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL
+        id                 VARCHAR(66) PRIMARY KEY,
+        seller             VARCHAR(66) NOT NULL,
+        title              VARCHAR(100) NOT NULL,
+        description        TEXT NOT NULL,
+        price              BIGINT NOT NULL,
+        image_url          TEXT NOT NULL DEFAULT '',
+        category           VARCHAR(50) NOT NULL DEFAULT 'Other',
+        is_available       BOOLEAN DEFAULT TRUE,
+        total_sales        INTEGER DEFAULT 0,
+        total_revenue      BIGINT DEFAULT 0,
+        rating_sum         INTEGER DEFAULT 0,
+        rating_count       INTEGER DEFAULT 0,
+        quantity           INTEGER DEFAULT 1,
+        available_quantity INTEGER DEFAULT 1,
+        resellable         BOOLEAN DEFAULT FALSE,
+        file_cid           TEXT DEFAULT '',
+        file_name          TEXT DEFAULT '',
+        file_size          BIGINT DEFAULT 0,
+        created_at         BIGINT NOT NULL DEFAULT 0,
+        updated_at         BIGINT NOT NULL DEFAULT 0,
+        CONSTRAINT valid_price        CHECK (price >= 0),
+        CONSTRAINT valid_rating_sum   CHECK (rating_sum >= 0),
+        CONSTRAINT valid_rating_count CHECK (rating_count >= 0)
       )
     `);
 
-    // Create indexes for products
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_products_seller ON products(seller);
-      CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
-      CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
-      CREATE INDEX IF NOT EXISTS idx_products_available ON products(is_available);
-      CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
-    `);
-
-    // Sellers table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sellers (
-        address TEXT PRIMARY KEY,
-        total_sales INTEGER DEFAULT 0,
-        total_revenue BIGINT DEFAULT 0,
-        follower_count INTEGER DEFAULT 0,
-        is_banned BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
+        address            VARCHAR(66) PRIMARY KEY,
+        display_name       VARCHAR(50) DEFAULT '',
+        bio                TEXT DEFAULT '',
+        total_sales        INTEGER DEFAULT 0,
+        total_revenue      BIGINT DEFAULT 0,
+        products_listed    INTEGER DEFAULT 0,
+        follower_count     INTEGER DEFAULT 0,
+        is_banned          BOOLEAN DEFAULT FALSE,
+        verification_level INTEGER DEFAULT 0,
+        created_at         BIGINT NOT NULL DEFAULT 0,
+        updated_at         BIGINT NOT NULL DEFAULT 0
       )
     `);
 
-    // Followers table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        product_id VARCHAR(66) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        reviewer   VARCHAR(66) NOT NULL,
+        rating     INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comment    TEXT NOT NULL,
+        created_at BIGINT NOT NULL DEFAULT 0,
+        UNIQUE(product_id, reviewer)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchases (
+        id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        product_id   VARCHAR(66),
+        buyer        VARCHAR(66) NOT NULL,
+        seller       VARCHAR(66) NOT NULL,
+        price        BIGINT NOT NULL,
+        platform_fee BIGINT NOT NULL DEFAULT 0,
+        tx_digest    VARCHAR(100) NOT NULL UNIQUE,
+        created_at   BIGINT NOT NULL DEFAULT 0,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+      )
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS followers (
-        follower_address TEXT NOT NULL,
-        seller_address TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
+        follower_address VARCHAR(66) NOT NULL,
+        seller_address   VARCHAR(66) NOT NULL,
+        created_at       BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (follower_address, seller_address)
       )
     `);
 
     await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_followers_seller ON followers(seller_address);
-      CREATE INDEX IF NOT EXISTS idx_followers_follower ON followers(follower_address);
-    `);
-
-    // Favorites/Wishlist table
-    await pool.query(`
       CREATE TABLE IF NOT EXISTS favorites (
-        user_address TEXT NOT NULL,
-        product_id TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
+        user_address VARCHAR(66) NOT NULL,
+        product_id   VARCHAR(66) NOT NULL,
+        created_at   BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (user_address, product_id)
       )
     `);
 
     await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_address);
-      CREATE INDEX IF NOT EXISTS idx_favorites_product ON favorites(product_id);
-    `);
-    
-    // Reviews table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS reviews (
-        product_id TEXT NOT NULL,
-        reviewer TEXT NOT NULL,
-        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-        comment TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
-        PRIMARY KEY (product_id, reviewer)
+      CREATE TABLE IF NOT EXISTS ownership_tokens (
+        token_id             VARCHAR(66) PRIMARY KEY,
+        original_product_id  VARCHAR(66) NOT NULL,
+        current_owner        VARCHAR(66) NOT NULL,
+        previous_owner       VARCHAR(66) DEFAULT '',
+        original_seller      VARCHAR(66) NOT NULL,
+        purchase_price       BIGINT NOT NULL DEFAULT 0,
+        purchase_timestamp   BIGINT NOT NULL DEFAULT 0,
+        is_listed_for_resale BOOLEAN DEFAULT FALSE,
+        resale_price         BIGINT DEFAULT 0,
+        file_cid             TEXT DEFAULT '',
+        created_at           BIGINT NOT NULL DEFAULT 0,
+        updated_at           BIGINT NOT NULL DEFAULT 0
       )
     `);
 
-    // Create index for reviews
     await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
-    `);
-
-    // Purchases table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS purchases (
-        id TEXT PRIMARY KEY,
-        product_id TEXT NOT NULL,
-        buyer TEXT NOT NULL,
-        seller TEXT NOT NULL,
-        price BIGINT NOT NULL,
-        platform_fee BIGINT NOT NULL,
-        tx_digest TEXT NOT NULL,
-        created_at BIGINT NOT NULL
+      CREATE TABLE IF NOT EXISTS resale_listings (
+        listing_id          VARCHAR(66) PRIMARY KEY,
+        token_id            VARCHAR(66) NOT NULL,
+        seller              VARCHAR(66) NOT NULL,
+        price               BIGINT NOT NULL,
+        original_product_id VARCHAR(66) NOT NULL,
+        is_active           BOOLEAN DEFAULT TRUE,
+        created_at          BIGINT NOT NULL DEFAULT 0,
+        updated_at          BIGINT NOT NULL DEFAULT 0
       )
     `);
 
-    // Create indexes for purchases
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_purchases_buyer ON purchases(buyer);
-      CREATE INDEX IF NOT EXISTS idx_purchases_seller ON purchases(seller);
-      CREATE INDEX IF NOT EXISTS idx_purchases_product_id ON purchases(product_id);
-    `);
-
-    // Indexer state table
-    // Uses last_event_cursor (Sui event cursor object) NOT last_processed_checkpoint
     await pool.query(`
       CREATE TABLE IF NOT EXISTS indexer_state (
-        id INTEGER PRIMARY KEY DEFAULT 1,
+        id                INTEGER PRIMARY KEY DEFAULT 1,
         last_event_cursor TEXT,
-        updated_at TIMESTAMP DEFAULT NOW()
+        updated_at        BIGINT NOT NULL DEFAULT 0,
+        CONSTRAINT single_row CHECK (id = 1)
       )
     `);
 
-    // Insert default indexer state row if not exists
     await pool.query(`
-      INSERT INTO indexer_state (id)
-      VALUES (1)
+      INSERT INTO indexer_state (id, updated_at) VALUES (1, 0)
       ON CONFLICT (id) DO NOTHING
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS verified_buyers (
+        address     VARCHAR(66) PRIMARY KEY,
+        verified_at BIGINT NOT NULL DEFAULT 0,
+        verified_by TEXT NOT NULL DEFAULT '',
+        is_active   BOOLEAN DEFAULT TRUE,
+        created_at  BIGINT NOT NULL DEFAULT 0
+      )
+    `);
+
+    // Indexes (all IF NOT EXISTS — safe to re-run)
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_products_seller               ON products(seller);
+      CREATE INDEX IF NOT EXISTS idx_products_category             ON products(category);
+      CREATE INDEX IF NOT EXISTS idx_products_available            ON products(is_available);
+      CREATE INDEX IF NOT EXISTS idx_products_created_at           ON products(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_products_price                ON products(price);
+      CREATE INDEX IF NOT EXISTS idx_sellers_created_at            ON sellers(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_sellers_total_sales           ON sellers(total_sales DESC);
+      CREATE INDEX IF NOT EXISTS idx_reviews_product               ON reviews(product_id);
+      CREATE INDEX IF NOT EXISTS idx_reviews_reviewer              ON reviews(reviewer);
+      CREATE INDEX IF NOT EXISTS idx_reviews_created_at            ON reviews(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_purchases_buyer               ON purchases(buyer);
+      CREATE INDEX IF NOT EXISTS idx_purchases_seller              ON purchases(seller);
+      CREATE INDEX IF NOT EXISTS idx_purchases_product             ON purchases(product_id);
+      CREATE INDEX IF NOT EXISTS idx_purchases_created_at          ON purchases(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_followers_seller              ON followers(seller_address);
+      CREATE INDEX IF NOT EXISTS idx_followers_follower            ON followers(follower_address);
+      CREATE INDEX IF NOT EXISTS idx_favorites_user                ON favorites(user_address);
+      CREATE INDEX IF NOT EXISTS idx_favorites_product             ON favorites(product_id);
+      CREATE INDEX IF NOT EXISTS idx_ownership_tokens_owner        ON ownership_tokens(current_owner);
+      CREATE INDEX IF NOT EXISTS idx_ownership_tokens_product      ON ownership_tokens(original_product_id);
+      CREATE INDEX IF NOT EXISTS idx_resale_listings_seller        ON resale_listings(seller);
+      CREATE INDEX IF NOT EXISTS idx_resale_listings_active        ON resale_listings(is_active);
+      CREATE INDEX IF NOT EXISTS idx_resale_listings_product       ON resale_listings(original_product_id);
     `);
 
     console.log('✅ Database schema initialized successfully');
@@ -168,7 +213,7 @@ export async function initializeDatabase() {
   }
 }
 
-// Test database connection
+
 export async function testConnection() {
   try {
     const result = await pool.query('SELECT NOW()');
