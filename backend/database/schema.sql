@@ -1,223 +1,231 @@
+-- ============================================================
+-- COMPLETE DROP AND RECREATE — ALL TABLES, INDEXES, VIEWS
+-- Combines original schema.sql + all BIGINT timestamp fixes
+-- Run in Railway: Postgres → Data tab → Query
+-- WARNING: Deletes all existing data
+-- ============================================================
+
+-- Drop views first (depend on tables)
+DROP VIEW IF EXISTS top_products CASCADE;
+DROP VIEW IF EXISTS top_sellers CASCADE;
+
+-- Drop tables in correct FK order
+DROP TABLE IF EXISTS resale_listings CASCADE;
+DROP TABLE IF EXISTS ownership_tokens CASCADE;
+DROP TABLE IF EXISTS license_renewals CASCADE;
+DROP TABLE IF EXISTS license_activations CASCADE;
+DROP TABLE IF EXISTS licenses CASCADE;
+DROP TABLE IF EXISTS verified_buyers CASCADE;
+DROP TABLE IF EXISTS reviews CASCADE;
+DROP TABLE IF EXISTS purchases CASCADE;
+DROP TABLE IF EXISTS favorites CASCADE;
+DROP TABLE IF EXISTS followers CASCADE;
+DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS sellers CASCADE;
+DROP TABLE IF EXISTS indexer_state CASCADE;
+
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Products table
+-- ── products ─────────────────────────────────────────────────
 CREATE TABLE products (
-    id VARCHAR(66) PRIMARY KEY,  -- Sui object ID
-    seller VARCHAR(66) NOT NULL,
-    title VARCHAR(100) NOT NULL,
-    description TEXT NOT NULL,
-    price BIGINT NOT NULL,  -- Price in MIST
-    image_url TEXT NOT NULL,
-    category VARCHAR(50) NOT NULL,
-    is_available BOOLEAN DEFAULT true,
-    created_at BIGINT NOT NULL,  -- Timestamp from blockchain
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    total_sales INTEGER DEFAULT 0,
-    total_revenue BIGINT DEFAULT 0,
-    rating_sum INTEGER DEFAULT 0,
-    rating_count INTEGER DEFAULT 0,
-    
-    -- Indexes for performance
-    CONSTRAINT valid_price CHECK (price >= 0),
-    CONSTRAINT valid_rating_sum CHECK (rating_sum >= 0),
-    CONSTRAINT valid_rating_count CHECK (rating_count >= 0)
+  id                 VARCHAR(66) PRIMARY KEY,
+  seller             VARCHAR(66) NOT NULL,
+  title              VARCHAR(100) NOT NULL,
+  description        TEXT NOT NULL,
+  price              BIGINT NOT NULL,
+  image_url          TEXT NOT NULL DEFAULT '',
+  category           VARCHAR(50) NOT NULL DEFAULT 'Other',
+  is_available       BOOLEAN DEFAULT TRUE,
+  total_sales        INTEGER DEFAULT 0,
+  total_revenue      BIGINT DEFAULT 0,
+  rating_sum         INTEGER DEFAULT 0,
+  rating_count       INTEGER DEFAULT 0,
+  quantity           INTEGER DEFAULT 1,
+  available_quantity INTEGER DEFAULT 1,
+  resellable         BOOLEAN DEFAULT FALSE,
+  file_cid           TEXT DEFAULT '',
+  file_name          TEXT DEFAULT '',
+  file_size          BIGINT DEFAULT 0,
+  created_at         BIGINT NOT NULL DEFAULT 0,
+  updated_at         BIGINT NOT NULL DEFAULT 0,
+  CONSTRAINT valid_price        CHECK (price >= 0),
+  CONSTRAINT valid_rating_sum   CHECK (rating_sum >= 0),
+  CONSTRAINT valid_rating_count CHECK (rating_count >= 0)
 );
 
--- Sellers table
+-- ── sellers ──────────────────────────────────────────────────
 CREATE TABLE sellers (
-    address VARCHAR(66) PRIMARY KEY,
-    display_name VARCHAR(50) NOT NULL,
-    bio TEXT,
-    total_sales INTEGER DEFAULT 0,
-    total_revenue BIGINT DEFAULT 0,
-    products_listed INTEGER DEFAULT 0,
-    follower_count INTEGER DEFAULT 0,
-    created_at BIGINT NOT NULL,
-    verification_level INTEGER DEFAULT 0,
-    is_banned BOOLEAN DEFAULT false,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  address            VARCHAR(66) PRIMARY KEY,
+  display_name       VARCHAR(50) DEFAULT '',
+  bio                TEXT DEFAULT '',
+  total_sales        INTEGER DEFAULT 0,
+  total_revenue      BIGINT DEFAULT 0,
+  products_listed    INTEGER DEFAULT 0,
+  follower_count     INTEGER DEFAULT 0,
+  is_banned          BOOLEAN DEFAULT FALSE,
+  verification_level INTEGER DEFAULT 0,
+  created_at         BIGINT NOT NULL DEFAULT 0,
+  updated_at         BIGINT NOT NULL DEFAULT 0
 );
 
--- Reviews table
+-- ── reviews ──────────────────────────────────────────────────
 CREATE TABLE reviews (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id VARCHAR(66) NOT NULL,
-    reviewer VARCHAR(66) NOT NULL,
-    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-    comment TEXT NOT NULL,
-    created_at BIGINT NOT NULL,
-    
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-    UNIQUE(product_id, reviewer)  -- One review per user per product
-);
-
--- Purchases table (for analytics)
-CREATE TABLE purchases (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id VARCHAR(66) NOT NULL,
-    buyer VARCHAR(66) NOT NULL,
-    seller VARCHAR(66) NOT NULL,
-    price BIGINT NOT NULL,
-    platform_fee BIGINT NOT NULL,
-    tx_digest VARCHAR(100) NOT NULL UNIQUE,
-    created_at BIGINT NOT NULL,
-    
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
-);
-
--- Indexer state (track sync progress)
-CREATE TABLE indexer_state (
-    id INTEGER PRIMARY KEY DEFAULT 1,
-    last_synced_checkpoint BIGINT DEFAULT 0,
-    last_synced_tx VARCHAR(100),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT single_row CHECK (id = 1)
-);
-
--- Insert initial indexer state
-INSERT INTO indexer_state (id, last_synced_checkpoint) VALUES (1, 0);
-
--- Ownership Tokens Table
-CREATE TABLE IF NOT EXISTS ownership_tokens (
-  id SERIAL PRIMARY KEY,
-  token_id VARCHAR(66) UNIQUE NOT NULL,
-  original_product_id VARCHAR(66) NOT NULL,
-  current_owner VARCHAR(66) NOT NULL,
-  previous_owner VARCHAR(66),
-  original_seller VARCHAR(66) NOT NULL,
-  purchase_price BIGINT NOT NULL,
-  purchase_timestamp BIGINT NOT NULL,
-  is_listed_for_resale BOOLEAN DEFAULT false,
-  resale_price BIGINT DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Resale Listings Table
-CREATE TABLE IF NOT EXISTS resale_listings (
-  id SERIAL PRIMARY KEY,
-  listing_id VARCHAR(66) UNIQUE NOT NULL,
-  token_id VARCHAR(66) NOT NULL,
-  seller VARCHAR(66) NOT NULL,
-  price BIGINT NOT NULL,
-  original_product_id VARCHAR(66) NOT NULL,
-  is_active BOOLEAN DEFAULT true,
-  created_at BIGINT NOT NULL,
-  updated_at TIMESTAMP DEFAULT NOW(),
-  FOREIGN KEY (token_id) REFERENCES ownership_tokens(token_id)
-);
-
--- ============================================================
--- Railway DB Fix v2
--- Run in Railway: Postgres → Data tab → Query
--- ============================================================
-
--- 1. Make display_name nullable so indexer can insert without it
---    (sellers don't have display names on-chain, only in profiles)
-ALTER TABLE sellers
-  ALTER COLUMN display_name DROP NOT NULL,
-  ALTER COLUMN display_name SET DEFAULT '';
-
--- 2. Make created_at nullable on sellers (indexer may not always have it)
-ALTER TABLE sellers
-  ALTER COLUMN created_at SET DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT * 1000;
-
--- 3. Add missing product columns if not present
-ALTER TABLE products
-  ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS available_quantity INTEGER DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS resellable BOOLEAN DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS file_cid TEXT DEFAULT '',
-  ADD COLUMN IF NOT EXISTS file_name TEXT DEFAULT '',
-  ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0;
-
--- 4. Add last_event_cursor to indexer_state
-ALTER TABLE indexer_state
-  ADD COLUMN IF NOT EXISTS last_event_cursor TEXT;
-
--- 5. Add resale columns to ownership_tokens if missing
-ALTER TABLE ownership_tokens
-  ADD COLUMN IF NOT EXISTS file_cid TEXT DEFAULT '';
-
--- 6. Ensure favorites and followers exist
-CREATE TABLE IF NOT EXISTS favorites (
-  user_address VARCHAR(66) NOT NULL,
+  id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id VARCHAR(66) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_address, product_id)
+  reviewer   VARCHAR(66) NOT NULL,
+  rating     INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment    TEXT NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT 0,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  UNIQUE(product_id, reviewer)
 );
 
-CREATE TABLE IF NOT EXISTS followers (
+-- ── purchases ────────────────────────────────────────────────
+CREATE TABLE purchases (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id   VARCHAR(66),
+  buyer        VARCHAR(66) NOT NULL,
+  seller       VARCHAR(66) NOT NULL,
+  price        BIGINT NOT NULL,
+  platform_fee BIGINT NOT NULL DEFAULT 0,
+  tx_digest    VARCHAR(100) NOT NULL UNIQUE,
+  created_at   BIGINT NOT NULL DEFAULT 0,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+);
+
+-- ── followers ────────────────────────────────────────────────
+CREATE TABLE followers (
   follower_address VARCHAR(66) NOT NULL,
-  seller_address VARCHAR(66) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
+  seller_address   VARCHAR(66) NOT NULL,
+  created_at       BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (follower_address, seller_address)
 );
 
-CREATE INDEX IF NOT EXISTS idx_favorites_user    ON favorites(user_address);
-CREATE INDEX IF NOT EXISTS idx_favorites_product ON favorites(product_id);
-CREATE INDEX IF NOT EXISTS idx_followers_seller  ON followers(seller_address);
-CREATE INDEX IF NOT EXISTS idx_followers_follower ON followers(follower_address);
+-- ── favorites ────────────────────────────────────────────────
+CREATE TABLE favorites (
+  user_address VARCHAR(66) NOT NULL,
+  product_id   VARCHAR(66) NOT NULL,
+  created_at   BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_address, product_id)
+);
 
+-- ── ownership_tokens ─────────────────────────────────────────
+CREATE TABLE ownership_tokens (
+  token_id             VARCHAR(66) PRIMARY KEY,
+  original_product_id  VARCHAR(66) NOT NULL,
+  current_owner        VARCHAR(66) NOT NULL,
+  previous_owner       VARCHAR(66) DEFAULT '',
+  original_seller      VARCHAR(66) NOT NULL,
+  purchase_price       BIGINT NOT NULL DEFAULT 0,
+  purchase_timestamp   BIGINT NOT NULL DEFAULT 0,
+  is_listed_for_resale BOOLEAN DEFAULT FALSE,
+  resale_price         BIGINT DEFAULT 0,
+  file_cid             TEXT DEFAULT '',
+  created_at           BIGINT NOT NULL DEFAULT 0,
+  updated_at           BIGINT NOT NULL DEFAULT 0
+);
 
--- ==================== Indexes for Performance ====================
+-- ── resale_listings ──────────────────────────────────────────
+CREATE TABLE resale_listings (
+  listing_id          VARCHAR(66) PRIMARY KEY,
+  token_id            VARCHAR(66) NOT NULL,
+  seller              VARCHAR(66) NOT NULL,
+  price               BIGINT NOT NULL,
+  original_product_id VARCHAR(66) NOT NULL,
+  is_active           BOOLEAN DEFAULT TRUE,
+  created_at          BIGINT NOT NULL DEFAULT 0,
+  updated_at          BIGINT NOT NULL DEFAULT 0,
+  -- No FK on token_id: indexer events can arrive out of order
+  -- ownership token is upserted in handleResaleListed if missing
+  CHECK (token_id IS NOT NULL)
+);
 
--- Products indexes
-CREATE INDEX idx_products_seller ON products(seller);
-CREATE INDEX idx_products_category ON products(category);
-CREATE INDEX idx_products_available ON products(is_available);
+-- ── indexer_state ────────────────────────────────────────────
+CREATE TABLE indexer_state (
+  id                INTEGER PRIMARY KEY DEFAULT 1,
+  last_event_cursor TEXT,
+  updated_at        BIGINT NOT NULL DEFAULT 0,
+  CONSTRAINT single_row CHECK (id = 1)
+);
+
+INSERT INTO indexer_state (id, updated_at) VALUES (1, 0);
+
+-- ── verified_buyers ──────────────────────────────────────────
+CREATE TABLE verified_buyers (
+  address     VARCHAR(66) PRIMARY KEY,
+  verified_at BIGINT NOT NULL DEFAULT 0,
+  verified_by TEXT NOT NULL DEFAULT '',
+  is_active   BOOLEAN DEFAULT TRUE,
+  created_at  BIGINT NOT NULL DEFAULT 0
+);
+
+-- ==================== Indexes ====================
+
+-- Products
+CREATE INDEX idx_products_seller     ON products(seller);
+CREATE INDEX idx_products_category   ON products(category);
+CREATE INDEX idx_products_available  ON products(is_available);
 CREATE INDEX idx_products_created_at ON products(created_at DESC);
-CREATE INDEX idx_products_price ON products(price);
+CREATE INDEX idx_products_price      ON products(price);
 
 -- Full-text search on products
-CREATE INDEX idx_products_title_search ON products USING gin(to_tsvector('english', title));
+CREATE INDEX idx_products_title_search       ON products USING gin(to_tsvector('english', title));
 CREATE INDEX idx_products_description_search ON products USING gin(to_tsvector('english', description));
 
--- Reviews indexes
-CREATE INDEX idx_reviews_product ON reviews(product_id);
-CREATE INDEX idx_reviews_reviewer ON reviews(reviewer);
-CREATE INDEX idx_reviews_created_at ON reviews(created_at DESC);
-
--- Purchases indexes
-CREATE INDEX idx_purchases_buyer ON purchases(buyer);
-CREATE INDEX idx_purchases_seller ON purchases(seller);
-CREATE INDEX idx_purchases_product ON purchases(product_id);
-CREATE INDEX idx_purchases_created_at ON purchases(created_at DESC);
-
--- Sellers indexes
-CREATE INDEX idx_sellers_created_at ON sellers(created_at DESC);
+-- Sellers
+CREATE INDEX idx_sellers_created_at  ON sellers(created_at DESC);
 CREATE INDEX idx_sellers_total_sales ON sellers(total_sales DESC);
 
--- resale indexes
-CREATE INDEX idx_ownership_tokens_owner ON ownership_tokens(current_owner);
+-- Reviews
+CREATE INDEX idx_reviews_product    ON reviews(product_id);
+CREATE INDEX idx_reviews_reviewer   ON reviews(reviewer);
+CREATE INDEX idx_reviews_created_at ON reviews(created_at DESC);
+
+-- Purchases
+CREATE INDEX idx_purchases_buyer      ON purchases(buyer);
+CREATE INDEX idx_purchases_seller     ON purchases(seller);
+CREATE INDEX idx_purchases_product    ON purchases(product_id);
+CREATE INDEX idx_purchases_created_at ON purchases(created_at DESC);
+
+-- Followers
+CREATE INDEX idx_followers_seller   ON followers(seller_address);
+CREATE INDEX idx_followers_follower ON followers(follower_address);
+
+-- Favorites
+CREATE INDEX idx_favorites_user    ON favorites(user_address);
+CREATE INDEX idx_favorites_product ON favorites(product_id);
+
+-- Ownership tokens
+CREATE INDEX idx_ownership_tokens_owner   ON ownership_tokens(current_owner);
 CREATE INDEX idx_ownership_tokens_product ON ownership_tokens(original_product_id);
-CREATE INDEX idx_resale_listings_seller ON resale_listings(seller);
-CREATE INDEX idx_resale_listings_active ON resale_listings(is_active);
 
--- ==================== Views for Analytics ====================
+-- Resale listings
+CREATE INDEX idx_resale_listings_seller  ON resale_listings(seller);
+CREATE INDEX idx_resale_listings_active  ON resale_listings(is_active);
+CREATE INDEX idx_resale_listings_product ON resale_listings(original_product_id);
 
--- Top products view
+-- ==================== Views ====================
+
 CREATE VIEW top_products AS
-SELECT 
-    p.*,
-    CASE 
-        WHEN p.rating_count > 0 THEN p.rating_sum::FLOAT / p.rating_count 
-        ELSE 0 
-    END as avg_rating
+SELECT
+  p.*,
+  CASE
+    WHEN p.rating_count > 0 THEN p.rating_sum::FLOAT / p.rating_count
+    ELSE 0
+  END AS avg_rating
 FROM products p
-WHERE p.is_available = true
+WHERE p.is_available = TRUE
 ORDER BY p.total_sales DESC;
 
--- Top sellers view
 CREATE VIEW top_sellers AS
-SELECT 
-    s.*,
-    COUNT(DISTINCT p.id) as active_products
+SELECT
+  s.*,
+  COUNT(DISTINCT p.id) AS active_products
 FROM sellers s
-LEFT JOIN products p ON s.address = p.seller AND p.is_available = true
+LEFT JOIN products p ON s.address = p.seller AND p.is_available = TRUE
 GROUP BY s.address
 ORDER BY s.total_sales DESC;
 
-SELECT 'Railway DB fix v2 complete ✅' AS status;
+-- ==================== Done ====================
+SELECT 'All tables, indexes and views created successfully ✅' AS status;
