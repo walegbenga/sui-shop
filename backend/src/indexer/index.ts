@@ -263,17 +263,17 @@ async function handleResaleListed(event: any) {
        previous_owner, original_seller, purchase_price,
        purchase_timestamp, is_listed_for_resale, resale_price,
        file_cid, created_at, updated_at
-     ) VALUES ($1,$2,$3,$4,$4,0,$5,true,$6,'',0,0)
+     ) VALUES ($1,$2,$3,$3,$3,0,0,true,$4,'',$5,$5)
      ON CONFLICT (token_id) DO UPDATE SET
        is_listed_for_resale = true,
        resale_price = EXCLUDED.resale_price,
        updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000`,
     [
-      fields.token_id,
-      fields.original_product_id || '',
-      fields.seller,   // current_owner = seller (they listed it)
-      Number(fields.timestamp),
-      Number(fields.price),
+      fields.token_id,              // $1 token_id
+      fields.original_product_id || '', // $2 original_product_id
+      fields.seller,                // $3 current_owner, previous_owner, original_seller
+      Number(fields.price),         // $4 resale_price
+      Number(fields.timestamp),     // $5 created_at, updated_at
     ]
   );
 
