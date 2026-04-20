@@ -399,44 +399,10 @@ async function startIndexer() {
 
   await initializeDatabase();
 
-  // Ensure last_event_cursor column exists (safe to run on existing DBs)
-  await pool.query(`ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_event_cursor TEXT`);
-
   // Seed the single indexer_state row if it doesn't exist yet
   await pool.query(`
     INSERT INTO indexer_state (id, updated_at)
-    VALUES (1, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000) ON CONFLICT (id) DO NOTHING
-  `);
-
-  // Ensure resale tables exist
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS resale_listings (
-      listing_id TEXT PRIMARY KEY,
-      token_id TEXT NOT NULL,
-      seller TEXT NOT NULL,
-      price BIGINT NOT NULL,
-      original_product_id TEXT NOT NULL,
-      is_active BOOLEAN DEFAULT true,
-      created_at BIGINT,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ownership_tokens (
-      token_id TEXT PRIMARY KEY,
-      original_product_id TEXT NOT NULL,
-      current_owner TEXT NOT NULL,
-      previous_owner TEXT,
-      original_seller TEXT NOT NULL,
-      purchase_price BIGINT,
-      purchase_timestamp BIGINT,
-      is_listed_for_resale BOOLEAN DEFAULT false,
-      resale_price BIGINT DEFAULT 0,
-      file_cid TEXT,
-      created_at BIGINT,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
+    VALUES (1, 0) ON CONFLICT (id) DO NOTHING
   `);
 
   console.log('🔄 Running initial event sync...');

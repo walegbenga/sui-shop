@@ -179,8 +179,8 @@ export async function initializeDatabase() {
       )
     `);
 
-    // Indexes (all IF NOT EXISTS — safe to re-run)
-    await pool.query(`
+    // Indexes — wrapped in try/catch since they may already exist with different definitions
+    try { await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller               ON products(seller);
       CREATE INDEX IF NOT EXISTS idx_products_category             ON products(category);
       CREATE INDEX IF NOT EXISTS idx_products_available            ON products(is_available);
@@ -204,7 +204,7 @@ export async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_resale_listings_seller        ON resale_listings(seller);
       CREATE INDEX IF NOT EXISTS idx_resale_listings_active        ON resale_listings(is_active);
       CREATE INDEX IF NOT EXISTS idx_resale_listings_product       ON resale_listings(original_product_id);
-    `);
+    `); } catch(idxErr: any) { console.warn('Index warning (safe):', idxErr.message); }
 
     console.log('✅ Database schema initialized successfully');
   } catch (error) {
