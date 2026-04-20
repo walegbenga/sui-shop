@@ -5,8 +5,8 @@
 
 //import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
-// Backend API URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { API_URL } from '@/lib/api';
+
 
 // Types
 interface WalletData {

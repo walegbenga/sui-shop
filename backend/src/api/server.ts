@@ -318,23 +318,6 @@ app.get('/api/sellers/:address/products', async (req, res) => {
 // ==================== Seller Endpoints ====================
 
 // Get seller profile
-app.get('/api/sellers/:address', async (req, res) => {
-  try {
-    const { address } = req.params;
-
-    const result = await pool.query('SELECT * FROM sellers WHERE address = $1', [address]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Seller not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error fetching seller:', error);
-    res.status(500).json({ error: 'Failed to fetch seller' });
-  }
-});
-
 // Get top sellers
 app.get('/api/sellers/top', async (req, res) => {
   try {
@@ -354,6 +337,25 @@ app.get('/api/sellers/top', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch top sellers' });
   }
 });
+
+app.get('/api/sellers/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query('SELECT * FROM sellers WHERE address = $1', [address]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Seller not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching seller:', error);
+    res.status(500).json({ error: 'Failed to fetch seller' });
+  }
+});
+
+
 
 // ==================== Review Endpoints ====================
 
@@ -410,7 +412,7 @@ app.get('/api/products/trending', async (req, res) => {
       `SELECT p.*, COUNT(pu.id) as recent_sales
        FROM products p
        LEFT JOIN purchases pu ON p.id = pu.product_id 
-         AND pu.created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '7 days') * 1000
+         AND pu.created_at > (EXTRACT(EPOCH FROM NOW()) - 604800) * 1000
        WHERE p.is_available = true
        GROUP BY p.id
        ORDER BY recent_sales DESC, p.total_sales DESC
@@ -916,7 +918,7 @@ app.get('/api/sellers/:address/analytics', async (req, res) => {
     // Get revenue by time period
     const revenueByMonth = await pool.query(
       `SELECT 
-        TO_CHAR(TO_TIMESTAMP(created_at), 'YYYY-MM') as month,
+        TO_CHAR(TO_TIMESTAMP(created_at / 1000), 'YYYY-MM') as month,
         COUNT(*) as sales,
         SUM(price) as revenue
        FROM purchases 
