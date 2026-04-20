@@ -162,7 +162,7 @@ export default function Favorites() {
                 </div>
 
                 <p className="text-xs text-gray-400 mt-2">
-                  Saved {new Date(favorite.favorited_at).toLocaleDateString()}
+                  Saved {new Date(Number(favorite.favorited_at || 0)).toLocaleDateString()}
                 </p>
 
                 <button

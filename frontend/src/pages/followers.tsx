@@ -95,7 +95,7 @@ export default function Followers() {
                       Followed on
                     </p>
                     <p className="text-sm text-gray-700">
-                      {new Date(follower.created_at).toLocaleDateString()}
+                      {new Date(Number(follower.created_at || 0)).toLocaleDateString()}
                     </p>
                   </div>
                 </div>

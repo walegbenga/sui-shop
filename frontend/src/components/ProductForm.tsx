@@ -196,7 +196,7 @@ export default function ProductForm({ productId }: ProductFormProps) {
         category: formData.category,
         quantity: parseInt(formData.quantity),
         resellable: formData.resellable,
-        seller: account.address,
+        seller: account?.address || '',
       }),
     });
 

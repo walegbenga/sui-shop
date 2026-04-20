@@ -482,7 +482,7 @@ app.post('/api/sellers/:address/follow', async (req, res) => {
     // Insert follower relationship
     await pool.query(
       `INSERT INTO followers (follower_address, seller_address, created_at)
-       VALUES ($1, $2, NOW())
+       VALUES ($1, $2, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)
        ON CONFLICT (follower_address, seller_address) DO NOTHING`,
       [followerAddress, address]
     );
@@ -588,7 +588,7 @@ app.post('/api/favorites', async (req, res) => {
 
     await pool.query(
       `INSERT INTO favorites (user_address, product_id, created_at)
-       VALUES ($1, $2, NOW())
+       VALUES ($1, $2, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)
        ON CONFLICT (user_address, product_id) DO NOTHING`,
       [userAddress, productId]
     );
@@ -715,7 +715,7 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
     // Insert review
     await pool.query(
       `INSERT INTO reviews (product_id, reviewer, rating, comment, created_at)
-       VALUES ($1, $2, $3, $4, EXTRACT(EPOCH FROM NOW())::BIGINT)`,
+       VALUES ($1, $2, $3, $4, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)`,
       [productId, buyerAddress, rating, comment || '']
     );
 
@@ -848,7 +848,7 @@ app.put('/api/products/:id', async (req, res) => {
     // Update product
     await pool.query(
       `UPDATE products 
-       SET title = $1, description = $2, price = $3, image_url = $4, category = $5, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+       SET title = $1, description = $2, price = $3, image_url = $4, category = $5, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000
        WHERE id = $6`,
       [title, description, price, image_url, category, id]
     );
@@ -883,7 +883,7 @@ app.delete('/api/products/:id', async (req, res) => {
     // Soft delete - mark as unavailable
     await pool.query(
       `UPDATE products 
-       SET is_available = false, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+       SET is_available = false, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000
        WHERE id = $1`,
       [id]
     );

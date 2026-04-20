@@ -241,7 +241,7 @@ export default function Profile() {
                 <p className="text-sm text-gray-500">Member Since</p>
                 <p className="mt-1 text-lg font-semibold text-gray-900">
                   {sellerProfile
-                    ? new Date(sellerProfile.created_at).toLocaleDateString()
+                    ? new Date(Number(sellerProfile.created_at)).toLocaleDateString()
                     : new Date().toLocaleDateString()}
                 </p>
               </div>
