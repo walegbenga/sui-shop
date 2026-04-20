@@ -190,11 +190,11 @@ app.get('/api/products', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -227,11 +227,11 @@ app.put('/api/products/:id', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -259,11 +259,11 @@ app.get('/api/products/:id', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    ////res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -309,11 +309,11 @@ app.get('/api/products/search/:query', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -360,11 +360,11 @@ app.get('/api/sellers/top', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -383,11 +383,11 @@ app.get('/api/sellers/:address', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -415,11 +415,11 @@ app.get('/api/products/:id/reviews', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -443,11 +443,11 @@ app.get('/api/stats', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -473,11 +473,11 @@ app.get('/api/products/trending', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -499,11 +499,11 @@ app.get('/api/categories', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -527,11 +527,11 @@ app.get('/api/purchases/:address', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -568,11 +568,11 @@ app.post('/api/sellers/:address/follow', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -606,11 +606,11 @@ app.delete('/api/sellers/:address/follow', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -632,11 +632,11 @@ app.get('/api/sellers/:address/following/:userAddress', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -659,11 +659,11 @@ app.get('/api/users/:address/following', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -690,11 +690,11 @@ app.post('/api/favorites', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -721,11 +721,11 @@ app.delete('/api/favorites', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -761,11 +761,11 @@ app.get('/api/users/:address/favorites', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -787,11 +787,11 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -974,11 +974,11 @@ app.put('/api/products/:id', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -1015,11 +1015,11 @@ app.delete('/api/products/:id', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -1086,11 +1086,11 @@ app.get('/api/sellers/:address/analytics', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -1112,11 +1112,11 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -1492,11 +1492,11 @@ app.get('/api/resale-listings/user/:userAddress/:productId', async (req, res) =>
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -1529,11 +1529,11 @@ app.get('/api/resale-listings', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -1558,11 +1558,11 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
     if (error instanceof Error) {
     console.error('Error fetching favorites:', error.message);
   } else {
-    //console.error('Error fetching favorites:', error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    console.error('Error fetching favorites:', error);
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
     //console.error('Error fetching favorites::', error?.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    //res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
