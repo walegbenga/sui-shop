@@ -7,22 +7,16 @@ dotenv.config();
 // Reads DATABASE_URL on Railway, falls back to local Docker credentials
 function createPool(): Pool {
   const databaseUrl = process.env.DATABASE_URL;
-  if (databaseUrl) {
-    console.log(`DB URL USED: ${databaseUrl}`);
-    return new Pool({
-      connectionString: databaseUrl,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
-    });
+
+  if (!databaseUrl) {
+    throw new Error("❌ DATABASE_URL is NOT set");
   }
+
+  console.log(`DB URL USED: ${databaseUrl}`);
+
   return new Pool({
-    host:     process.env.PGHOST     || '127.0.0.1',
-    port:     Number(process.env.PGPORT) || 5432,
-    user:     process.env.PGUSER     || 'suishop',
-    password: process.env.PGPASSWORD || 'suishop_password_2026',
-    database: process.env.PGDATABASE || 'suishop',
+    connectionString: databaseUrl,
+    ssl: { rejectUnauthorized: false },
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
@@ -34,6 +28,9 @@ export const pool = createPool();
 export async function initializeDatabase() {
   try {
     console.log('🔄 Initializing database schema...');
+    console.log("ENV CHECK:", {
+  DATABASE_URL: !!process.env.DATABASE_URL,
+});
 
     await pool.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
