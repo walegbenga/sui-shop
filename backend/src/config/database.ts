@@ -27,7 +27,7 @@ export const pool = createPool();
 // Initialize database tables
 export async function initializeDatabase() {
   try {
-    console.log('🔄 Initializing database schema...');
+    console.log('🔄 Initializing database schemas...');
     console.log("ENV CHECK:", {
   DATABASE_URL: !!process.env.DATABASE_URL,
 });
