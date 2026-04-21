@@ -86,6 +86,10 @@ app.get('/health', (req, res) => {
 
 // ==================== Product Endpoints ====================
 
+app.get("/", (req, res) => {
+  res.send("🚀 Digi ChainStore API is running");
+});
+
 // Get all products with filters
 app.get('/api/products', async (req, res) => {
   try {
