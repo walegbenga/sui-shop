@@ -1384,15 +1384,21 @@ app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Reques
     console.log(`   Type: ${req.file.mimetype}`);
     console.log(`   Size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
 
-    // Upload to Pinata
-    const uint8Array = new Uint8Array(req.file.buffer);
-    const blob = new Blob([uint8Array], { type: req.file.mimetype });
-    const file = new File([blob], req.file.originalname, {
-      type: req.file.mimetype,
+    // Upload to Pinata - use base64 upload since Node.js lacks browser File API
+    const base64Content = req.file.buffer.toString('base64');
+    const dataURI = `data:${req.file.mimetype};base64,${base64Content}`;
+
+    // Convert buffer to a File-compatible object using a polyfill approach
+    const { Blob: NodeBlob } = require('buffer');
+    const fileBlob = new NodeBlob([req.file.buffer], { type: req.file.mimetype });
+    
+    // Pinata SDK needs a File-like object - create one from the blob
+    const fileForUpload = Object.assign(fileBlob, {
+      name: req.file.originalname,
       lastModified: Date.now(),
     });
 
-    const result = await pinata.upload.file(file);
+    const result = await pinata.upload.file(fileForUpload as any);
 
     console.log(`✅ File uploaded to IPFS: ${result.IpfsHash}`);
 
