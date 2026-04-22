@@ -8,7 +8,7 @@ import LoadingButton from './LoadingButton';
 import { promise } from 'zod';
 import { API_URL } from '@/lib/api';
 
-const CATEGORIES = ['Electronics', 'Fashion', 'Home', 'Sports', 'Books', 'Other'];
+const CATEGORIES = ['Ebook', 'Evideo', 'Stickers', 'software plugin', 'Music', 'Other'];
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
@@ -27,7 +27,7 @@ export default function ProductForm({ productId }: ProductFormProps) {
     description: '',
     price: '',
     imageUrl: '',      // ✅ RESTORED
-    category: 'Electronics',
+    category: 'Ebook',
     quantity: '1',
     resellable: false,
   });
