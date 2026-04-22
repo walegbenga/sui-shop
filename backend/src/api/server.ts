@@ -39,9 +39,28 @@ const upload = multer({
 });
 
 // Initialize Pinata
-const pinata = new PinataSDK({
-  pinataJwt: process.env.PINATA_API_KEY?.trim(),
+/*const pinata = new PinataSDK({
+  pinataJwt: process.env.PINATA_JWT!,
   pinataGateway: 'gateway.pinata.cloud'
+});*/
+
+const rawJwt = process.env.PINATA_JWT || "";
+
+const cleanJwt = rawJwt
+  .trim()
+  .replace(/\s+/g, "")           // remove any newlines/spaces (Railway issue)
+  .replace(/^Bearer\s+/i, "");   // remove "Bearer " if present
+
+console.log("=== PINATA JWT DEBUG (Railway) ===");
+console.log("Raw length:", rawJwt.length);
+console.log("Clean length:", cleanJwt.length);
+console.log("Starts with eyJ:", cleanJwt.startsWith("eyJ"));
+console.log("Number of dots:", (cleanJwt.match(/\./g) || []).length);
+console.log("=========================");
+
+const pinata = new PinataSDK({
+  pinataJwt: cleanJwt,
+  pinataGateway: "gateway.pinata.cloud"   // you can change to a dedicated gateway later
 });
 
 // ✅ INPUT VALIDATION HELPERS
