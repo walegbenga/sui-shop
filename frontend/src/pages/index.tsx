@@ -14,7 +14,7 @@ import { API_URL } from '@/lib/api';
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
-const CATEGORIES = ['All', 'Electronics', 'Fashion', 'Home', 'Sports', 'Books'];
+const CATEGORIES = ['All', 'Ebook', 'Evideo', 'Stickers', 'Software Plugin', 'Music'];
 const PRICE_RANGES = [
   { label: 'All Prices', min: null, max: null },
   { label: 'Under 1 SUI', min: null, max: 1000000000 },
