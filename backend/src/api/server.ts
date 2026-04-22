@@ -40,7 +40,7 @@ const upload = multer({
 
 // Initialize Pinata
 const pinata = new PinataSDK({
-  pinataJwt: process.env.PINATA_API_KEY!,
+  pinataJwt: process.env.PINATA_API_KEY?.trim(),
   pinataGateway: 'gateway.pinata.cloud'
 });
 
@@ -1383,7 +1383,7 @@ app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Reques
     console.log(`📤 Uploading file: ${req.file.originalname}`);
     console.log(`   Type: ${req.file.mimetype}`);
     console.log(`   Size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
-
+    console.log("Pinata legth: ", process.env.PINATA_JWT?.length);
     // Upload to Pinata - use base64 upload since Node.js lacks browser File API
     const base64Content = req.file.buffer.toString('base64');
     const dataURI = `data:${req.file.mimetype};base64,${base64Content}`;
