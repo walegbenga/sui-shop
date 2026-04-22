@@ -1417,7 +1417,7 @@ app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Reques
   }
 });
 
-// Get ownership token for a user's purchase of a resellable product
+// Get ownership token for a user's purchase of a resellable products
 /*
 app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
   try {
