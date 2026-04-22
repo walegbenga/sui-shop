@@ -145,7 +145,7 @@ export default function Profile() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
             {/* Seller Stats */}
             <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-1">Seller Stats</h3>
+              <h3 className="text-sm font-medium opacity-90">Seller Stats</h3>
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm opacity-90">Total Sales:</span>
@@ -166,7 +166,7 @@ export default function Profile() {
 
             {/* Products Stats */}
             <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-1">Products</h3>
+              <h3 className="text-sm font-medium opacity-90">Products</h3>
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm opacity-90">Total Listed:</span>
@@ -185,7 +185,7 @@ export default function Profile() {
 
             {/* Buyer Stats */}
             <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-1">Buyer Stats</h3>
+              <h3 className="text-sm font-medium opacity-90">Buyer Stats</h3>
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm opacity-90">Total Purchases:</span>
@@ -201,29 +201,31 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Followers + Social row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          {/* Followers Card */}
             <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-4">Your Followers</h3>
-              <div className="flex justify-between items-center">
-                <span className="text-sm opacity-90">Total Followers:</span>
-                <span className="text-2xl font-bold">{stats?.totalFollowers || 0}</span>
+              <h3 className="text-sm font-medium opacity-90">Your Followers</h3>
+              <div className="mt-4">
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Total Followers:</span>
+                  <span className="font-semibold">{stats?.totalFollowers || 0}</span>
+                </div>
               </div>
             </div>
+
+          {/* Favorites Stats */}
             <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-4">Social Activity</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
+              <h3 className="text-sm font-medium opacity-90">Social</h3>
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between">
                   <span className="text-sm opacity-90">Favorites:</span>
-                  <span className="text-xl font-bold">{stats?.totalFavorites || 0}</span>
+                  <span className="font-semibold">{stats?.totalFavorites || 0}</span>
                 </div>
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between">
                   <span className="text-sm opacity-90">Following:</span>
-                  <span className="text-xl font-bold">{stats?.totalFollowing || 0}</span>
+                  <span className="font-semibold">{stats?.totalFollowing || 0}</span>
                 </div>
               </div>
             </div>
-          </div>
             
           {/* Account Status */}
           <div className="bg-white rounded-lg shadow p-6">
