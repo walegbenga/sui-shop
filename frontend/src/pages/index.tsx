@@ -15,6 +15,13 @@ const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
 const CATEGORIES = ['All', 'Ebook', 'Evideo', 'Stickers', 'Software Plugin', 'Music', 'Other'];
+
+const VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.wmv', '.mpeg'];
+const isVideoUrl = (url: string) => {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return VIDEO_EXTENSIONS.some(ext => lower.includes(ext)) || lower.includes('video/');
+};
 const PRICE_RANGES = [
   { label: 'All Prices', min: null, max: null },
   { label: 'Under 1 SUI', min: null, max: 1000000000 },
@@ -454,13 +461,33 @@ export default function Home() {
                     className="bg-white rounded-lg shadow hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:-translate-y-1"
                   >
                     <div className="relative group">
-                      <img
-                        src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
-                        alt={product.title}
-                        className="w-full h-48 object-cover rounded-t-lg"
-                        loading="lazy"
-                        onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
-                      />
+                      {isVideoUrl(product.image_url) ? (
+                        <div className="relative w-full h-48 bg-gray-900 rounded-t-lg flex items-center justify-center overflow-hidden">
+                          <video
+                            src={product.image_url}
+                            className="w-full h-48 object-cover rounded-t-lg"
+                            muted
+                            preload="metadata"
+                            onMouseEnter={e => (e.currentTarget as HTMLVideoElement).play()}
+                            onMouseLeave={e => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="bg-black/50 rounded-full p-3">
+                              <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <img
+                          src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
+                          alt={product.title}
+                          className="w-full h-48 object-cover rounded-t-lg"
+                          loading="lazy"
+                          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
+                        />
+                      )}
                       {!product.is_available && (
                         <div className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">SOLD</div>
                       )}
