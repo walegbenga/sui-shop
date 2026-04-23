@@ -12,9 +12,23 @@ const CATEGORIES = ['Ebook', 'Evideo', 'Stickers', 'Software Plugin', 'Music', '
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
+// License type options
+const LICENSE_TYPES = [
+  { value: 0, label: 'No License',          desc: 'Regular download, no activation required' },
+  { value: 1, label: 'Single Device',        desc: 'One activation per purchase' },
+  { value: 2, label: 'Multi Device',         desc: 'Buyer can activate on N devices (you set the limit)' },
+  { value: 3, label: 'Unlimited Devices',    desc: 'Buyer can activate on any number of devices' },
+];
+
 interface ProductFormProps {
   productId?: string;
 }
+
+const lbl: React.CSSProperties = {
+  display: 'block', fontSize: 12, fontWeight: 600,
+  color: 'var(--text-secondary)', marginBottom: 6,
+  letterSpacing: '0.04em', textTransform: 'uppercase',
+};
 
 export default function ProductForm({ productId }: ProductFormProps) {
   const router = useRouter();
@@ -30,12 +44,19 @@ export default function ProductForm({ productId }: ProductFormProps) {
     category: 'Ebook',
     quantity: '1',
     resellable: false,
+    // License fields
+    licenseType:         0,
+    licenseMaxDevices:   '2',
+    licenseDurationType: 'lifetime' as 'lifetime' | 'days',
+    licenseDurationDays: '365',
+    licenseRenewalPrice: '',
   });
   
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEditMode);
+  const [focused,   setFocused] = useState('');
 
   useEffect(() => {
     if (isEditMode && productId) {
@@ -62,6 +83,12 @@ export default function ProductForm({ productId }: ProductFormProps) {
         category: data.category,
         quantity: data.quantity?.toString() || '1',
         resellable: data.resellable || false,
+        licenseType: data.license_type || 0,
+        licenseMaxDevices: data.license_max_activations?.toString() || '2',
+        licenseDurationType: data.license_duration_days === 0 ? 'lifetime' : 'days',
+        licenseDurationDays: data.license_duration_days?.toString() || '365',
+        licenseRenewalPrice: data.license_renewal_price
+          ? (Number(data.license_renewal_price) / 1e9).toString() : '',
       });
     } catch (error) {
       console.error('Error fetching product:', error);
@@ -139,6 +166,13 @@ export default function ProductForm({ productId }: ProductFormProps) {
 
     const priceInMist = Math.floor(Number(formData.price) * 1_000_000_000);
     const quantity = parseInt(formData.quantity) || 1;
+    const durationDays  = formData.licenseDurationType === 'lifetime' ? 0 : parseInt(formData.licenseDurationDays) || 0;
+    const renewalMist   = formData.licenseRenewalPrice
+      ? Math.floor(Number(formData.licenseRenewalPrice) * 1_000_000_000) : 0;
+    // max activations: single=1, multi=user input, unlimited=0
+    const maxActivations = formData.licenseType === 1 ? 1
+      : formData.licenseType === 2 ? parseInt(formData.licenseMaxDevices) || 2
+      : 0;
 
     const tx = new Transaction();
     tx.moveCall({
@@ -152,6 +186,10 @@ export default function ProductForm({ productId }: ProductFormProps) {
         tx.pure(bcs.string().serialize(formData.category).toBytes()), // category
         tx.pure(bcs.bool().serialize(formData.resellable).toBytes()), // resellable
         tx.pure(bcs.string().serialize(fileData?.cid || '').toBytes()), // file_cid
+        tx.pure(bcs.u8().serialize(formData.licenseType).toBytes()),
+        tx.pure(bcs.u64().serialize(maxActivations).toBytes()),
+        tx.pure(bcs.u64().serialize(durationDays).toBytes()),
+        tx.pure(bcs.u64().serialize(renewalMist).toBytes()),
         tx.object('0x6'), // clock
       ],
     });
@@ -210,6 +248,18 @@ export default function ProductForm({ productId }: ProductFormProps) {
       throw new Error(error.error || 'Failed to update product');
     }
   };
+
+  const fs = (name: string): React.CSSProperties => ({
+    width: '100%', padding: '11px 14px',
+    background: 'var(--bg-elevated)', borderRadius: 10,
+    color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
+    fontSize: 13, outline: 'none',
+    border: `1px solid ${focused === name ? 'var(--gold-dim)' : 'var(--border-subtle)'}`,
+    boxShadow: focused === name ? '0 0 0 3px rgba(201,168,76,.1)' : 'none',
+    transition: 'border-color .2s, box-shadow .2s',
+  });
+
+  const hasLicense = formData.licenseType !== 0;
 
   if (fetching) {
     return (
@@ -307,6 +357,124 @@ export default function ProductForm({ productId }: ProductFormProps) {
                   e.currentTarget.src = 'https://via.placeholder.com/400x300?text=Invalid+Image';
                 }}
               />
+            </div>
+          )}
+        </div>
+
+        {/* ── LICENSE CONFIGURATION ── */}
+        <div style={{ background: 'rgba(201,168,76,.04)', border: '1px solid var(--border)', borderRadius: 14, padding: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 18 }}>🔑</span>
+            <div>
+              <p style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>License Management</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                Control how buyers can use this product after purchase
+              </p>
+            </div>
+          </div>
+
+          {/* License type selector */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            {LICENSE_TYPES.map(lt => {
+              const active = formData.licenseType === lt.value;
+              return (
+                <button key={lt.value} type="button"
+                  onClick={() => setFormData({ ...formData, licenseType: lt.value })}
+                  style={{
+                    padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                    background: active ? 'rgba(201,168,76,.1)' : 'var(--bg-elevated)',
+                    border: `1px solid ${active ? 'var(--gold)' : 'var(--border-subtle)'}`,
+                    transition: 'all .2s',
+                  }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--gold-light)' : 'var(--text-primary)', marginBottom: 2 }}>
+                    {lt.label}
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{lt.desc}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* License options — only shown when license is enabled */}
+          {hasLicense && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
+
+              {/* Max devices — only for multi-device */}
+              {formData.licenseType === 2 && (
+                <div>
+                  <label style={{ ...lbl, color: 'var(--gold-dim)' }}>Max Devices per License</label>
+                  <input style={fs('maxdev')} value={formData.licenseMaxDevices} type="number" min="2" step="1"
+                    onChange={e => setFormData({ ...formData, licenseMaxDevices: e.target.value })}
+                    onFocus={() => setFocused('maxdev')} onBlur={() => setFocused('')}
+                    placeholder="e.g. 3" />
+                  <p style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)' }}>
+                    Buyer can activate on this many devices simultaneously
+                  </p>
+                </div>
+              )}
+
+              {/* Duration — lifetime vs days */}
+              <div>
+                <label style={{ ...lbl, color: 'var(--gold-dim)' }}>License Duration</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  {(['lifetime', 'days'] as const).map(t => {
+                    const active = formData.licenseDurationType === t;
+                    return (
+                      <button key={t} type="button"
+                        onClick={() => setFormData({ ...formData, licenseDurationType: t })}
+                        style={{
+                          padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                          background: active ? 'rgba(201,168,76,.1)' : 'var(--bg-elevated)',
+                          border: `1px solid ${active ? 'var(--gold)' : 'var(--border-subtle)'}`,
+                          color: active ? 'var(--gold-light)' : 'var(--text-secondary)',
+                        }}>
+                        {t === 'lifetime' ? '♾️ Lifetime' : '📅 Fixed Duration'}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {formData.licenseDurationType === 'days' && (
+                  <div style={{ position: 'relative' }}>
+                    <input style={{ ...fs('durdays'), paddingRight: 56 }}
+                      value={formData.licenseDurationDays} type="number" min="1"
+                      onChange={e => setFormData({ ...formData, licenseDurationDays: e.target.value })}
+                      onFocus={() => setFocused('durdays')} onBlur={() => setFocused('')}
+                      placeholder="365" />
+                    <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 11, fontWeight: 600 }}>days</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Renewal price — only for fixed duration */}
+              {formData.licenseDurationType === 'days' && (
+                <div>
+                  <label style={{ ...lbl, color: 'var(--gold-dim)' }}>Renewal Price (SUI)</label>
+                  <div style={{ position: 'relative' }}>
+                    <input style={{ ...fs('renew'), paddingRight: 44 }}
+                      value={formData.licenseRenewalPrice} type="number" step="0.01" min="0"
+                      onChange={e => setFormData({ ...formData, licenseRenewalPrice: e.target.value })}
+                      onFocus={() => setFocused('renew')} onBlur={() => setFocused('')}
+                      placeholder="0.00 (leave empty = not renewable)" />
+                    <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>SUI</span>
+                  </div>
+                  <p style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)' }}>
+                    Leave empty to make this license non-renewable after expiry
+                  </p>
+                </div>
+              )}
+
+              {/* Summary of config */}
+              <div style={{ background: 'var(--bg-elevated)', borderRadius: 10, padding: '10px 14px', border: '1px solid var(--border-subtle)' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                  <strong style={{ color: 'var(--gold-light)' }}>Buyers will receive:</strong> A {LICENSE_TYPES[formData.licenseType].label} license
+                  {formData.licenseType === 2 ? ` for up to ${formData.licenseMaxDevices} devices` : ''}
+                  {formData.licenseDurationType === 'lifetime' ? ', valid for life.' : `, valid for ${formData.licenseDurationDays} days.`}
+                  {formData.licenseRenewalPrice && formData.licenseDurationType === 'days'
+                    ? ` Renewable for ${formData.licenseRenewalPrice} SUI.`
+                    : formData.licenseDurationType === 'days' ? ' Not renewable.' : ''}
+                </p>
+              </div>
             </div>
           )}
         </div>

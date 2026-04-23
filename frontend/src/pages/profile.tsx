@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
-import { API_URL } from '@/lib/api';
+import VerifiedBadge from '@/components/VerifiedBadge';
+import { useVerification } from '@/hooks/useVerification';
 
 interface SellerProfile {
   address: string;
@@ -8,6 +9,8 @@ interface SellerProfile {
   total_revenue: string;
   follower_count: number;
   is_banned: boolean;
+  is_verified: boolean;
+  verified_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +32,8 @@ export default function Profile() {
   const [stats, setStats] = useState<ProfileStats | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const { isVerifiedSeller, isVerifiedBuyer } = useVerification(account?.address);
+
   useEffect(() => {
     if (account?.address) {
       fetchProfile();
@@ -38,9 +43,8 @@ export default function Profile() {
 
   const fetchProfile = async () => {
     if (!account?.address) return;
-
     try {
-      const response = await fetch(`${API_URL}/api/sellers/${account.address}`);
+      const response = await fetch(`http://localhost:4000/api/sellers/${account.address}`);
       if (response.ok) {
         const data = await response.json();
         setSellerProfile(data);
@@ -52,44 +56,32 @@ export default function Profile() {
 
   const fetchStats = async () => {
     if (!account?.address) return;
-
     setLoading(true);
-
     try {
-      // Fetch products
-      const productsRes = await fetch(`${API_URL}/api/sellers/${account.address}/products`);
-      const productsData = await productsRes.json();
-      const products = productsData.products || [];
+      const [productsRes, purchasesRes, favoritesRes, followingRes, followersRes] =
+        await Promise.all([
+          fetch(`http://localhost:4000/api/sellers/${account.address}/products`),
+          fetch(`http://localhost:4000/api/purchases/${account.address}`),
+          fetch(`http://localhost:4000/api/users/${account.address}/favorites`),
+          fetch(`http://localhost:4000/api/users/${account.address}/following`),
+          fetch(`http://localhost:4000/api/sellers/${account.address}/followers`),
+        ]);
 
-      // Fetch purchases
-      const purchasesRes = await fetch(`${API_URL}/api/purchases/${account.address}`);
-      const purchasesData = await purchasesRes.json();
-      const purchases = purchasesData.purchases || [];
-
-      // Fetch favorites
-      const favoritesRes = await fetch(`${API_URL}/api/users/${account.address}/favorites`);
-      const favoritesData = await favoritesRes.json();
-      const favorites = favoritesData.favorites || [];
-
-      // Fetch following
-      const followingRes = await fetch(`${API_URL}/api/users/${account.address}/following`);
-      const followingData = await followingRes.json();
-      const following = followingData.following || [];
-      
-      // Fetch follower
-      const followersRes = await fetch(`${API_URL}/api/sellers/${account.address}/followers`);
-      const followersData = await followersRes.json();
-      const followers = followersData.followers || [];
+      const products  = (await productsRes.json()).products   || [];
+      const purchases = (await purchasesRes.json()).purchases  || [];
+      const favorites = (await favoritesRes.json()).favorites  || [];
+      const following = (await followingRes.json()).following  || [];
+      const followers = (await followersRes.json()).followers  || [];
 
       setStats({
-        totalProducts: products.length,
+        totalProducts:     products.length,
         availableProducts: products.filter((p: any) => p.is_available).length,
-        soldProducts: products.filter((p: any) => !p.is_available).length,
-        totalPurchases: purchases.length,
-        totalSpent: purchases.reduce((sum: number, p: any) => sum + Number(p.price), 0).toString(),
-        totalFavorites: favorites.length,
-        totalFollowing: following.length,
-        totalFollowers: followers.length,
+        soldProducts:      products.filter((p: any) => !p.is_available).length,
+        totalPurchases:    purchases.length,
+        totalSpent:        purchases.reduce((s: number, p: any) => s + Number(p.price), 0).toString(),
+        totalFavorites:    favorites.length,
+        totalFollowing:    following.length,
+        totalFollowers:    followers.length,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -111,13 +103,39 @@ export default function Profile() {
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
+          {isVerifiedSeller && <VerifiedBadge type="seller" size="lg" showLabel />}
+          {isVerifiedBuyer  && <VerifiedBadge type="buyer"  size="lg" showLabel />}
+        </div>
         <p className="text-gray-500 mt-1">Manage your account and view your stats</p>
       </div>
 
-      {/* Wallet Address Card */}
+      {/* ── Verification perks banner ── */}
+      {(isVerifiedSeller || isVerifiedBuyer) && (
+        <div className={`rounded-xl p-4 mb-6 flex items-start gap-3 ${
+          isVerifiedSeller ? 'bg-blue-50 border border-blue-200' : 'bg-emerald-50 border border-emerald-200'
+        }`}>
+          <div className="text-2xl">✨</div>
+          <div>
+            <p className={`font-semibold ${isVerifiedSeller ? 'text-blue-800' : 'text-emerald-800'}`}>
+              You have verified status!
+            </p>
+            <ul className={`mt-1 text-sm space-y-0.5 ${isVerifiedSeller ? 'text-blue-700' : 'text-emerald-700'}`}>
+              <li>✓ 1.5% platform fee instead of 2% on all transactions</li>
+              {isVerifiedSeller && <li>✓ Your products are ranked higher in search results</li>}
+              {isVerifiedSeller && <li>✓ Verified badge shown on all your products</li>}
+              {isVerifiedBuyer  && <li>✓ Verified badge shown on your reviews</li>}
+              {isVerifiedBuyer  && <li>✓ Your reviews carry more weight in ratings</li>}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* ── Wallet Address Card ── */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Wallet Address</h2>
         <div className="flex items-center justify-between bg-gray-50 rounded-lg p-4">
@@ -127,7 +145,7 @@ export default function Profile() {
               navigator.clipboard.writeText(account.address);
               alert('Address copied!');
             }}
-            className="ml-4 text-indigo-600 hover:text-indigo-500 text-sm font-medium"
+            className="ml-4 text-indigo-600 hover:text-indigo-500 text-sm font-medium whitespace-nowrap"
           >
             Copy
           </button>
@@ -136,16 +154,20 @@ export default function Profile() {
 
       {loading ? (
         <div className="text-center py-12">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent" />
           <p className="mt-2 text-gray-600">Loading profile...</p>
         </div>
       ) : (
         <>
-          {/* Stats Grid */}
+          {/* ── Stats Grid ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+
             {/* Seller Stats */}
             <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-1">Seller Stats</h3>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-medium opacity-90">Seller Stats</h3>
+                {isVerifiedSeller && <VerifiedBadge type="seller" size="sm" />}
+              </div>
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm opacity-90">Total Sales:</span>
@@ -161,12 +183,18 @@ export default function Profile() {
                   <span className="text-sm opacity-90">Followers:</span>
                   <span className="font-semibold">{sellerProfile?.follower_count || 0}</span>
                 </div>
+                {isVerifiedSeller && (
+                  <div className="flex justify-between">
+                    <span className="text-sm opacity-90">Platform Fee:</span>
+                    <span className="font-semibold text-yellow-300">1.5% ✓</span>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Products Stats */}
             <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-1">Products</h3>
+              <h3 className="text-sm font-medium opacity-90">Products</h3>
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm opacity-90">Total Listed:</span>
@@ -185,7 +213,10 @@ export default function Profile() {
 
             {/* Buyer Stats */}
             <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-1">Buyer Stats</h3>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-medium opacity-90">Buyer Stats</h3>
+                {isVerifiedBuyer && <VerifiedBadge type="buyer" size="sm" />}
+              </div>
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm opacity-90">Total Purchases:</span>
@@ -197,38 +228,46 @@ export default function Profile() {
                     {((Number(stats?.totalSpent) || 0) / 1e9).toFixed(2)} SUI
                   </span>
                 </div>
+                {isVerifiedBuyer && (
+                  <div className="flex justify-between">
+                    <span className="text-sm opacity-90">Platform Fee:</span>
+                    <span className="font-semibold text-yellow-300">1.5% ✓</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Followers */}
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-6 text-white">
+              <h3 className="text-sm font-medium opacity-90">Your Followers</h3>
+              <div className="mt-4">
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Total Followers:</span>
+                  <span className="font-semibold">{stats?.totalFollowers || 0}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Social */}
+            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg shadow p-6 text-white">
+              <h3 className="text-sm font-medium opacity-90">Social</h3>
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Favorites:</span>
+                  <span className="font-semibold">{stats?.totalFavorites || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm opacity-90">Following:</span>
+                  <span className="font-semibold">{stats?.totalFollowing || 0}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Followers + Social row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-4">Your Followers</h3>
-              <div className="flex justify-between items-center">
-                <span className="text-sm opacity-90">Total Followers:</span>
-                <span className="text-2xl font-bold">{stats?.totalFollowers || 0}</span>
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg shadow p-6 text-white">
-              <h3 className="text-base font-semibold opacity-90 mb-4">Social Activity</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm opacity-90">Favorites:</span>
-                  <span className="text-xl font-bold">{stats?.totalFavorites || 0}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm opacity-90">Following:</span>
-                  <span className="text-xl font-bold">{stats?.totalFollowing || 0}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-            
-          {/* Account Status */}
+          {/* ── Account Status ── */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Account Status</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <p className="text-sm text-gray-500">Account Type</p>
                 <p className="mt-1 text-lg font-semibold text-gray-900">
@@ -244,8 +283,8 @@ export default function Profile() {
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Status</p>
-                <p className="mt-1">
+                <p className="text-sm text-gray-500">Account Status</p>
+                <div className="mt-1 flex items-center gap-2 flex-wrap">
                   {sellerProfile?.is_banned ? (
                     <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-sm font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
                       Banned
@@ -255,11 +294,23 @@ export default function Profile() {
                       Active
                     </span>
                   )}
-                </p>
+                  {isVerifiedSeller && <VerifiedBadge type="seller" size="sm" showLabel />}
+                  {isVerifiedBuyer  && <VerifiedBadge type="buyer"  size="sm" showLabel />}
+                </div>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Network</p>
                 <p className="mt-1 text-lg font-semibold text-gray-900">Sui Testnet</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Platform Fee</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">
+                  {(isVerifiedSeller || isVerifiedBuyer) ? (
+                    <span className="text-emerald-600">1.5% <span className="text-sm text-gray-500 font-normal">(verified discount)</span></span>
+                  ) : (
+                    <span>2.0% <span className="text-sm text-gray-500 font-normal">(standard)</span></span>
+                  )}
+                </p>
               </div>
             </div>
           </div>

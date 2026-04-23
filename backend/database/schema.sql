@@ -47,6 +47,11 @@ CREATE TABLE products (
   file_cid           TEXT DEFAULT '',
   file_name          TEXT DEFAULT '',
   file_size          BIGINT DEFAULT 0,
+  seller_is_verified BOOLEAN DEFAULT false,
+  license_type       SMALLINT  DEFAULT 0,
+  license_max_activations INTEGER   DEFAULT 1,
+  license_duration_days  INTEGER   DEFAULT 0,
+  license_renewal_price  BIGINT    DEFAULT 0,
   created_at         BIGINT NOT NULL DEFAULT 0,
   updated_at         BIGINT NOT NULL DEFAULT 0,
   CONSTRAINT valid_price        CHECK (price >= 0),
@@ -65,6 +70,9 @@ CREATE TABLE sellers (
   follower_count     INTEGER DEFAULT 0,
   is_banned          BOOLEAN DEFAULT FALSE,
   verification_level INTEGER DEFAULT 0,
+  verified_at        BIGINT,
+  verified_by        TEXT,
+  is_verified        BOOLEAN DEFAULT false,
   created_at         BIGINT NOT NULL DEFAULT 0,
   updated_at         BIGINT NOT NULL DEFAULT 0
 );
@@ -91,6 +99,7 @@ CREATE TABLE purchases (
   platform_fee BIGINT NOT NULL DEFAULT 0,
   tx_digest    VARCHAR(100) NOT NULL UNIQUE,
   created_at   BIGINT NOT NULL DEFAULT 0,
+  buyer_was_verified BOOLEAN DEFAULT false,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
 );
 
@@ -139,6 +148,54 @@ CREATE TABLE resale_listings (
   -- No FK on token_id: indexer events can arrive out of order
   -- ownership token is upserted in handleResaleListed if missing
   CHECK (token_id IS NOT NULL)
+);
+
+ --Main licenses table
+--    One row per license issued.
+CREATE TABLE IF NOT EXISTS licenses (
+  id                  SERIAL PRIMARY KEY,
+  license_id          VARCHAR(66) UNIQUE NOT NULL,  -- on-chain object ID
+  product_id          VARCHAR(66) NOT NULL,
+  buyer_address       VARCHAR(66) NOT NULL,
+  seller_address      VARCHAR(66) NOT NULL,
+  tx_digest           VARCHAR(100) NOT NULL,
+  license_type        SMALLINT NOT NULL DEFAULT 1,
+  max_activations     INTEGER NOT NULL DEFAULT 1,   -- 0 = unlimited
+  current_activations INTEGER NOT NULL DEFAULT 0,
+  expiry_timestamp    BIGINT  DEFAULT 0,            -- 0 = lifetime
+  renewal_price       BIGINT  DEFAULT 0,            -- 0 = not renewable
+  status              VARCHAR(20) DEFAULT 'active', -- active | revoked | expired
+  renewal_count       INTEGER DEFAULT 0,
+  issue_timestamp     BIGINT NOT NULL,
+  created_at          TIMESTAMP DEFAULT NOW(),
+  updated_at          TIMESTAMP DEFAULT NOW()
+);
+ 
+-- 3. License activations table
+--    One row per device activation.
+CREATE TABLE IF NOT EXISTS license_activations (
+  id             SERIAL PRIMARY KEY,
+  license_id     VARCHAR(66) NOT NULL REFERENCES licenses(license_id) ON DELETE CASCADE,
+  device_id      TEXT NOT NULL,                -- hashed device fingerprint
+  activated_at   BIGINT NOT NULL,
+  deactivated_at BIGINT,                       -- NULL = still active
+  is_active      BOOLEAN DEFAULT true,
+  created_at     TIMESTAMP DEFAULT NOW(),
+  UNIQUE(license_id, device_id)
+);
+ 
+-- 4. License renewals table
+--    Audit trail of every renewal payment
+CREATE TABLE IF NOT EXISTS license_renewals (
+  id              SERIAL PRIMARY KEY,
+  license_id      VARCHAR(66) NOT NULL REFERENCES licenses(license_id) ON DELETE CASCADE,
+  buyer_address   VARCHAR(66) NOT NULL,
+  amount_paid     BIGINT NOT NULL,
+  tx_digest       VARCHAR(100) NOT NULL,
+  old_expiry      BIGINT,
+  new_expiry      BIGINT,
+  renewal_number  INTEGER NOT NULL,
+  created_at      BIGINT NOT NULL
 );
 
 -- ── indexer_state ────────────────────────────────────────────
@@ -205,6 +262,21 @@ CREATE INDEX idx_resale_listings_seller  ON resale_listings(seller);
 CREATE INDEX idx_resale_listings_active  ON resale_listings(is_active);
 CREATE INDEX idx_resale_listings_product ON resale_listings(original_product_id);
 
+-- Index for fast verified seller product queries
+CREATE INDEX IF NOT EXISTS idx_sellers_verified ON sellers(is_verified);
+CREATE INDEX IF NOT EXISTS idx_products_seller_verified ON products(seller_is_verified);
+CREATE INDEX IF NOT EXISTS idx_verified_buyers_address ON verified_buyers(address);
+
+-- Indexes for fast lookups
+CREATE INDEX IF NOT EXISTS idx_licenses_buyer      ON licenses(buyer_address);
+CREATE INDEX IF NOT EXISTS idx_licenses_seller     ON licenses(seller_address);
+CREATE INDEX IF NOT EXISTS idx_licenses_product    ON licenses(product_id);
+CREATE INDEX IF NOT EXISTS idx_licenses_status     ON licenses(status);
+CREATE INDEX IF NOT EXISTS idx_licenses_object_id  ON licenses(license_id);
+CREATE INDEX IF NOT EXISTS idx_activations_license ON license_activations(license_id);
+CREATE INDEX IF NOT EXISTS idx_activations_device  ON license_activations(device_id);
+CREATE INDEX IF NOT EXISTS idx_renewals_license    ON license_renewals(license_id);
+
 -- ==================== Views ====================
 
 CREATE VIEW top_products AS
@@ -226,6 +298,31 @@ FROM sellers s
 LEFT JOIN products p ON s.address = p.seller AND p.is_available = TRUE
 GROUP BY s.address
 ORDER BY s.total_sales DESC;
+
+
+
+-- View: products with seller verification status joined
+CREATE OR REPLACE VIEW products_with_verification AS
+SELECT
+  p.*,
+  COALESCE(s.is_verified, false) AS seller_verified
+FROM products p
+LEFT JOIN sellers s ON p.seller = s.address;
+
+-- Helpful view — licenses with product info and activation count
+CREATE OR REPLACE VIEW licenses_full AS
+SELECT
+  l.*,
+  p.title          AS product_title,
+  p.image_url      AS product_image,
+  p.category       AS product_category,
+  p.seller         AS product_seller,
+  COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_device_count
+FROM licenses l
+LEFT JOIN products p ON l.product_id = p.id
+LEFT JOIN license_activations la ON l.license_id = la.license_id
+GROUP BY l.id, p.title, p.image_url, p.category, p.seller;
+
 
 -- ==================== Done ====================
 SELECT 'All tables, indexes and views created successfully ✅' AS status;

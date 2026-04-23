@@ -12,6 +12,7 @@ import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 const rateLimit = require('express-rate-limit');
 import { pool } from '../config/database';
+import { createHash } from 'crypto';
 
 dotenv.config();
 
@@ -180,19 +181,29 @@ app.get('/api/products', async (req, res) => {
 
     // Get total count
     const countResult = await pool.query(
-      `SELECT COUNT(*) as total FROM products ${whereClause}`,
-      queryParams
-    );
+  `SELECT COUNT(*) as total 
+   FROM products p
+   LEFT JOIN sellers s ON p.seller = s.address
+   ${whereClause}`,
+  queryParams
+);
     const totalCount = parseInt(countResult.rows[0].total);
 
     // Get products
     const result = await pool.query(
-      `SELECT * FROM products 
-       ${whereClause}
-       ORDER BY ${sortColumn} ${order}
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...queryParams, Number(limit), offset]
-    );
+  `SELECT 
+     p.*,
+     COALESCE(s.is_verified, false) AS seller_is_verified
+   FROM products p
+   LEFT JOIN sellers s ON p.seller = s.address
+   ${whereClause}
+   ORDER BY 
+     COALESCE(s.is_verified, false) DESC,
+     p.${sortColumn} ${order}
+   LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+  [...queryParams, Number(limit), offset]
+);
+
 
     res.json({
       products: result.rows,
@@ -402,20 +413,24 @@ app.get('/api/products/:id/reviews', async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const result = await pool.query(
-      `SELECT * FROM reviews 
-       WHERE product_id = $1 
-       ORDER BY created_at DESC
+      `SELECT 
+         r.*,
+         CASE WHEN vb.address IS NOT NULL THEN true ELSE false END AS reviewer_is_verified_buyer
+       FROM reviews r
+       LEFT JOIN verified_buyers vb 
+         ON r.reviewer = vb.address AND vb.is_active = true
+       WHERE r.product_id = $1
+       ORDER BY 
+         reviewer_is_verified_buyer DESC,   -- verified buyer reviews first
+         r.created_at DESC
        LIMIT $2 OFFSET $3`,
       [id, Number(limit), offset]
     );
 
     res.json({ reviews: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching reviews::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch reviews', detail: (error as any)?.message });
-    }
+    console.error('Error fetching reviews:', error);
+    res.status(500).json({ error: 'Failed to fetch reviews' });
   }
 });
 
@@ -1510,6 +1525,571 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
     }
   }
 });
+
+// ==================== Verified Users Endpoints ====================
+
+// ── Admin: Verify a seller ────────────────────────────────────────────────────
+app.post('/api/admin/verify-seller', async (req, res) => {
+  try {
+    const { adminAddress, sellerAddress, verified_at } = req.body;
+
+    if (!adminAddress || !sellerAddress) {
+      return res.status(400).json({ error: 'adminAddress and sellerAddress required' });
+    }
+
+    // Upsert seller row and mark as verified
+    await pool.query(
+      `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned, is_verified, verified_at, verified_by)
+       VALUES ($1, 0, 0, 0, false, true, $2, $3)
+       ON CONFLICT (address) DO UPDATE SET
+         is_verified = true,
+         verified_at = $2,
+         verified_by = $3,
+         updated_at  = NOW()`,
+      [sellerAddress, verified_at || Date.now(), adminAddress]
+    );
+
+    // Boost all their products in ranking
+    await pool.query(
+      `UPDATE products SET seller_is_verified = true WHERE seller = $1`,
+      [sellerAddress]
+    );
+
+    console.log(`✅ Seller verified: ${sellerAddress} by ${adminAddress}`);
+    res.json({ success: true, message: 'Seller verified successfully' });
+  } catch (error) {
+    console.error('Error verifying seller:', error);
+    res.status(500).json({ error: 'Failed to verify seller' });
+  }
+});
+
+// ── Admin: Unverify a seller ──────────────────────────────────────────────────
+app.post('/api/admin/unverify-seller', async (req, res) => {
+  try {
+    const { adminAddress, sellerAddress } = req.body;
+
+    if (!adminAddress || !sellerAddress) {
+      return res.status(400).json({ error: 'adminAddress and sellerAddress required' });
+    }
+
+    await pool.query(
+      `UPDATE sellers SET is_verified = false, updated_at = NOW() WHERE address = $1`,
+      [sellerAddress]
+    );
+
+    await pool.query(
+      `UPDATE products SET seller_is_verified = false WHERE seller = $1`,
+      [sellerAddress]
+    );
+
+    res.json({ success: true, message: 'Seller unverified' });
+  } catch (error) {
+    console.error('Error unverifying seller:', error);
+    res.status(500).json({ error: 'Failed to unverify seller' });
+  }
+});
+
+// ── Admin: Verify a buyer ─────────────────────────────────────────────────────
+app.post('/api/admin/verify-buyer', async (req, res) => {
+  try {
+    const { adminAddress, buyerAddress, verified_at } = req.body;
+
+    if (!adminAddress || !buyerAddress) {
+      return res.status(400).json({ error: 'adminAddress and buyerAddress required' });
+    }
+
+    await pool.query(
+      `INSERT INTO verified_buyers (address, verified_at, verified_by, is_active)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (address) DO UPDATE SET
+         verified_at = $2,
+         verified_by = $3,
+         is_active   = true,
+         created_at  = NOW()`,
+      [buyerAddress, verified_at || Date.now(), adminAddress]
+    );
+
+    console.log(`✅ Buyer verified: ${buyerAddress} by ${adminAddress}`);
+    res.json({ success: true, message: 'Buyer verified successfully' });
+  } catch (error) {
+    console.error('Error verifying buyer:', error);
+    res.status(500).json({ error: 'Failed to verify buyer' });
+  }
+});
+
+// ── Admin: Unverify a buyer ───────────────────────────────────────────────────
+app.post('/api/admin/unverify-buyer', async (req, res) => {
+  try {
+    const { adminAddress, buyerAddress } = req.body;
+
+    if (!adminAddress || !buyerAddress) {
+      return res.status(400).json({ error: 'adminAddress and buyerAddress required' });
+    }
+
+    await pool.query(
+      `UPDATE verified_buyers SET is_active = false WHERE address = $1`,
+      [buyerAddress]
+    );
+
+    res.json({ success: true, message: 'Buyer unverified' });
+  } catch (error) {
+    console.error('Error unverifying buyer:', error);
+    res.status(500).json({ error: 'Failed to unverify buyer' });
+  }
+});
+
+// ── Check if a user is a verified buyer ──────────────────────────────────────
+app.get('/api/verified-buyer/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query(
+      `SELECT * FROM verified_buyers WHERE address = $1 AND is_active = true`,
+      [address]
+    );
+
+    res.json({
+      isVerifiedBuyer: result.rows.length > 0,
+      verifiedAt: result.rows[0]?.verified_at || null,
+    });
+  } catch (error) {
+    console.error('Error checking buyer verification:', error);
+    res.status(500).json({ error: 'Failed to check verification' });
+  }
+});
+
+// ── Get all verified sellers ──────────────────────────────────────────────────
+app.get('/api/verified-sellers', async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+
+    const result = await pool.query(
+      `SELECT s.*, COUNT(DISTINCT p.id) as product_count
+       FROM sellers s
+       LEFT JOIN products p ON s.address = p.seller AND p.is_available = true
+       WHERE s.is_verified = true AND s.is_banned = false
+       GROUP BY s.address
+       ORDER BY s.total_sales DESC
+       LIMIT $1`,
+      [Number(limit)]
+    );
+
+    res.json({ sellers: result.rows });
+  } catch (error) {
+    console.error('Error fetching verified sellers:', error);
+    res.status(500).json({ error: 'Failed to fetch verified sellers' });
+  }
+});
+
+// ── Indexer hook: sync verification events from chain ────────────────────────
+app.post('/api/indexer/seller-verified', async (req, res) => {
+  try {
+    const { seller, verified_by, timestamp } = req.body;
+
+    await pool.query(
+      `UPDATE sellers SET is_verified = true, verified_at = $1, verified_by = $2, updated_at = NOW()
+       WHERE address = $3`,
+      [timestamp, verified_by, seller]
+    );
+
+    await pool.query(
+      `UPDATE products SET seller_is_verified = true WHERE seller = $1`,
+      [seller]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to sync seller verification' });
+  }
+});
+
+app.post('/api/indexer/buyer-verified', async (req, res) => {
+  try {
+    const { buyer, verified_by, timestamp } = req.body;
+
+    await pool.query(
+      `INSERT INTO verified_buyers (address, verified_at, verified_by, is_active)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (address) DO UPDATE SET
+         verified_at = $2, verified_by = $3, is_active = true`,
+      [buyer, timestamp, verified_by]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to sync buyer verification' });
+  }
+});
+
+// ── Utility: generate a readable license key from on-chain data ──
+function buildLicenseKey(licenseObjectId: string): string {
+  // Takes the on-chain object ID and formats it as a readable key
+  // DIGI-XXXX-XXXX-XXXX-XXXX
+  const hash = createHash('sha256').update(licenseObjectId).digest('hex');
+  const parts = hash.match(/.{1,4}/g)!.slice(0, 6).join('-').toUpperCase();
+  return `DIGI-${parts}`;
+}
+
+// ── GET /api/licenses/buyer/:address ────────────────────────
+// All licenses owned by a buyer (with product info)
+app.get('/api/licenses/buyer/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const result = await pool.query(
+      `SELECT
+         l.*,
+         p.title       AS product_title,
+         p.image_url   AS product_image,
+         p.category    AS product_category,
+         p.file_cid    AS product_file_cid,
+         COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_devices
+       FROM licenses l
+       LEFT JOIN products p  ON l.product_id = p.id
+       LEFT JOIN license_activations la ON l.license_id = la.license_id
+       WHERE l.buyer_address = $1
+       GROUP BY l.id, p.title, p.image_url, p.category, p.file_cid
+       ORDER BY l.issue_timestamp DESC`,
+      [address]
+    );
+
+    res.json({ licenses: result.rows });
+  } catch (error) {
+    console.error('Error fetching buyer licenses:', error);
+    res.status(500).json({ error: 'Failed to fetch licenses' });
+  }
+});
+
+// ── GET /api/licenses/:licenseId ────────────────────────────
+// Single license by its on-chain object ID
+app.get('/api/licenses/:licenseId', async (req, res) => {
+  try {
+    const { licenseId } = req.params;
+
+    const result = await pool.query(
+      `SELECT
+         l.*,
+         p.title     AS product_title,
+         p.image_url AS product_image,
+         p.category  AS product_category,
+         p.license_duration_days
+       FROM licenses l
+       LEFT JOIN products p ON l.product_id = p.id
+       WHERE l.license_id = $1`,
+      [licenseId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'License not found' });
+    }
+
+    // Also fetch active devices
+    const devices = await pool.query(
+      `SELECT device_id, activated_at FROM license_activations
+       WHERE license_id = $1 AND is_active = true
+       ORDER BY activated_at ASC`,
+      [licenseId]
+    );
+
+    res.json({ license: result.rows[0], devices: devices.rows });
+  } catch (error) {
+    console.error('Error fetching license:', error);
+    res.status(500).json({ error: 'Failed to fetch license' });
+  }
+});
+
+// ── GET /api/licenses/product/:productId/buyer/:address ─────
+// Check if a specific buyer has a license for a specific product
+app.get('/api/licenses/product/:productId/buyer/:address', async (req, res) => {
+  try {
+    const { productId, address } = req.params;
+
+    const result = await pool.query(
+      `SELECT l.*,
+         COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_devices
+       FROM licenses l
+       LEFT JOIN license_activations la ON l.license_id = la.license_id
+       WHERE l.product_id = $1 AND l.buyer_address = $2 AND l.status = 'active'
+       GROUP BY l.id
+       ORDER BY l.issue_timestamp DESC
+       LIMIT 1`,
+      [productId, address]
+    );
+
+    res.json({
+      hasLicense: result.rows.length > 0,
+      license: result.rows[0] || null,
+    });
+  } catch (error) {
+    console.error('Error checking license:', error);
+    res.status(500).json({ error: 'Failed to check license' });
+  }
+});
+
+// ── POST /api/licenses/verify ───────────────────────────────
+// Public endpoint — third-party software calls this to verify a key
+// Body: { licenseKey, productId? }
+app.post('/api/licenses/verify', async (req, res) => {
+  try {
+    const { licenseKey, productId } = req.body;
+
+    if (!licenseKey) {
+      return res.status(400).json({ error: 'licenseKey is required' });
+    }
+
+    // Search by license_id (the on-chain object ID we store)
+    // The license key displayed to users is DIGI-XXXXX which we regenerate
+    const query = productId
+      ? `SELECT l.*, p.title AS product_title
+         FROM licenses l
+         LEFT JOIN products p ON l.product_id = p.id
+         WHERE l.license_id = $1 AND l.product_id = $2`
+      : `SELECT l.*, p.title AS product_title
+         FROM licenses l
+         LEFT JOIN products p ON l.product_id = p.id
+         WHERE l.license_id = $1`;
+
+    const params = productId ? [licenseKey, productId] : [licenseKey];
+    const result = await pool.query(query, params);
+
+    if (result.rows.length === 0) {
+      return res.json({ valid: false, message: 'License not found' });
+    }
+
+    const license  = result.rows[0];
+    const now      = Date.now();
+    const isExpired = license.expiry_timestamp > 0 && now > Number(license.expiry_timestamp);
+    const isActive  = license.status === 'active' && !isExpired;
+
+    res.json({
+      valid:          isActive,
+      status:         license.status,
+      expired:        isExpired,
+      product_title:  license.product_title,
+      buyer_address:  license.buyer_address,
+      license_type:   license.license_type,
+      max_activations: license.max_activations,
+      current_activations: license.current_activations,
+      expiry_timestamp: license.expiry_timestamp,
+      renewal_price:  license.renewal_price,
+      message: license.status === 'revoked'
+        ? 'License has been revoked'
+        : isExpired
+        ? 'License has expired — renewal required'
+        : 'License is valid ✅',
+    });
+  } catch (error) {
+    console.error('Error verifying license:', error);
+    res.status(500).json({ error: 'Failed to verify license' });
+  }
+});
+
+// ── GET /api/licenses/seller/:address ───────────────────────
+// Seller analytics — all licenses issued for their products
+app.get('/api/licenses/seller/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    const result = await pool.query(
+      `SELECT
+         l.*,
+         p.title      AS product_title,
+         p.image_url  AS product_image,
+         COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_devices
+       FROM licenses l
+       LEFT JOIN products p ON l.product_id = p.id
+       LEFT JOIN license_activations la ON l.license_id = la.license_id
+       WHERE l.seller_address = $1
+       GROUP BY l.id, p.title, p.image_url
+       ORDER BY l.issue_timestamp DESC
+       LIMIT $2 OFFSET $3`,
+      [address, Number(limit), offset]
+    );
+
+    // Summary stats
+    const stats = await pool.query(
+      `SELECT
+         COUNT(*)                                         AS total_licenses,
+         COUNT(*) FILTER (WHERE status = 'active')       AS active_licenses,
+         COUNT(*) FILTER (WHERE status = 'revoked')      AS revoked_licenses,
+         COUNT(*) FILTER (WHERE expiry_timestamp > 0 AND expiry_timestamp < $2) AS expired_licenses,
+         SUM(renewal_count)                              AS total_renewals
+       FROM licenses
+       WHERE seller_address = $1`,
+      [address, Date.now()]
+    );
+
+    res.json({ licenses: result.rows, stats: stats.rows[0] });
+  } catch (error) {
+    console.error('Error fetching seller licenses:', error);
+    res.status(500).json({ error: 'Failed to fetch seller licenses' });
+  }
+});
+
+// ── POST /api/admin/revoke-license ──────────────────────────
+// Admin revokes a license (mirrors the on-chain revoke_license call)
+app.post('/api/admin/revoke-license', async (req, res) => {
+  try {
+    const { licenseId, adminAddress, reason } = req.body;
+
+    if (!licenseId || !adminAddress) {
+      return res.status(400).json({ error: 'licenseId and adminAddress required' });
+    }
+
+    await pool.query(
+      `UPDATE licenses
+       SET status = 'revoked', updated_at = NOW()
+       WHERE license_id = $1`,
+      [licenseId]
+    );
+
+    // Deactivate all devices for this license
+    await pool.query(
+      `UPDATE license_activations
+       SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2`,
+      [Date.now(), licenseId]
+    );
+
+    console.log(`🚫 License revoked: ${licenseId} by admin ${adminAddress}. Reason: ${reason}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error revoking license:', error);
+    res.status(500).json({ error: 'Failed to revoke license' });
+  }
+});
+
+// ── Indexer sync endpoints ───────────────────────────────────
+// Called by the indexer when it processes chain events
+
+app.post('/api/indexer/license-issued', async (req, res) => {
+  try {
+    const { licenseId, productId, buyer, seller, licenseType,
+            maxActivations, expiryTimestamp, renewalPrice, timestamp, txDigest } = req.body;
+
+    await pool.query(
+      `INSERT INTO licenses (
+         license_id, product_id, buyer_address, seller_address,
+         tx_digest, license_type, max_activations, current_activations,
+         expiry_timestamp, renewal_price, status, renewal_count, issue_timestamp
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,'active',0,$10)
+       ON CONFLICT (license_id) DO NOTHING`,
+      [licenseId, productId, buyer, seller, txDigest,
+       licenseType, maxActivations, expiryTimestamp, renewalPrice, timestamp]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseIssued:', error);
+    res.status(500).json({ error: 'Failed to sync license' });
+  }
+});
+
+app.post('/api/indexer/license-activated', async (req, res) => {
+  try {
+    const { licenseId, deviceId, activationsUsed, timestamp } = req.body;
+
+    // Upsert the activation row
+    await pool.query(
+      `INSERT INTO license_activations (license_id, device_id, activated_at, is_active)
+       VALUES ($1,$2,$3,true)
+       ON CONFLICT (license_id, device_id) DO UPDATE SET
+         is_active = true, activated_at = $3, deactivated_at = NULL`,
+      [licenseId, deviceId, timestamp]
+    );
+
+    // Keep current_activations in sync
+    await pool.query(
+      `UPDATE licenses SET current_activations = $1, updated_at = NOW()
+       WHERE license_id = $2`,
+      [activationsUsed, licenseId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseActivated:', error);
+    res.status(500).json({ error: 'Failed to sync activation' });
+  }
+});
+
+app.post('/api/indexer/license-deactivated', async (req, res) => {
+  try {
+    const { licenseId, deviceId, activationsUsed, timestamp } = req.body;
+
+    await pool.query(
+      `UPDATE license_activations
+       SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2 AND device_id = $3`,
+      [timestamp, licenseId, deviceId]
+    );
+
+    await pool.query(
+      `UPDATE licenses SET current_activations = $1, updated_at = NOW()
+       WHERE license_id = $2`,
+      [activationsUsed, licenseId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseDeactivated:', error);
+    res.status(500).json({ error: 'Failed to sync deactivation' });
+  }
+});
+
+app.post('/api/indexer/license-renewed', async (req, res) => {
+  try {
+    const { licenseId, owner, newExpiry, renewalCount,
+            amountPaid, txDigest, oldExpiry, timestamp } = req.body;
+
+    await pool.query(
+      `UPDATE licenses
+       SET expiry_timestamp = $1, status = 'active',
+           renewal_count = $2, updated_at = NOW()
+       WHERE license_id = $3`,
+      [newExpiry, renewalCount, licenseId]
+    );
+
+    // Record in renewal audit table
+    await pool.query(
+      `INSERT INTO license_renewals (
+         license_id, buyer_address, amount_paid, tx_digest,
+         old_expiry, new_expiry, renewal_number, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [licenseId, owner, amountPaid, txDigest, oldExpiry, newExpiry, renewalCount, timestamp]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseRenewed:', error);
+    res.status(500).json({ error: 'Failed to sync renewal' });
+  }
+});
+
+app.post('/api/indexer/license-revoked', async (req, res) => {
+  try {
+    const { licenseId } = req.body;
+
+    await pool.query(
+      `UPDATE licenses SET status = 'revoked', updated_at = NOW()
+       WHERE license_id = $1`,
+      [licenseId]
+    );
+
+    await pool.query(
+      `UPDATE license_activations SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2`,
+      [Date.now(), licenseId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseRevoked:', error);
+    res.status(500).json({ error: 'Failed to sync revocation' });
+  }
+});
+
 
 // ==================== Start Server ====================
 

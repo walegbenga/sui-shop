@@ -65,6 +65,10 @@ async function handleProductListed(event: any) {
     const isActive          = fields.is_active        !== false;
     const resellable        = fields.resellable       || false;
     const fileCid           = fields.file_cid         || '';
+    const licenseType          = Number(fields.license_type)            || 0;
+    const licenseMaxActivations = Number(fields.license_max_activations) || 1;
+    const licenseDurationDays  = Number(fields.license_duration_days)   || 0;
+    const licenseRenewalPrice  = Number(fields.license_renewal_price)   || 0;
 
     console.log(`   Title: ${title} | Resellable: ${resellable} | File: ${fileCid}`);
 
@@ -72,8 +76,8 @@ async function handleProductListed(event: any) {
       `INSERT INTO products (
          id, seller, title, description, price, image_url, category,
          is_available, total_sales, rating_sum, rating_count,
-         quantity, available_quantity, resellable, file_cid,
-         created_at, updated_at
+         quantity, available_quantity, resellable, file_cid, license_type, 
+         license_max_activations, license_duration_days, license_renewal_price, created_at, updated_at
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)
        ON CONFLICT (id) DO UPDATE SET
          title              = EXCLUDED.title,
@@ -86,11 +90,17 @@ async function handleProductListed(event: any) {
          available_quantity = EXCLUDED.available_quantity,
          resellable         = EXCLUDED.resellable,
          file_cid           = EXCLUDED.file_cid,
+         license_type             = EXCLUDED.license_type,
+         license_max_activations  = EXCLUDED.license_max_activations,
+         license_duration_days    = EXCLUDED.license_duration_days,
+         license_renewal_price    = EXCLUDED.license_renewal_price,
          updated_at         = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000`,
       [
         productId, seller, title, description, price, imageUrl, category,
         isActive, 0, 0, 0, quantityAvailable, quantityAvailable,
-        resellable, fileCid, Number(timestamp),
+        resellable, fileCid,
+        licenseType, licenseMaxActivations, licenseDurationDays, licenseRenewalPrice, 
+        Number(timestamp),
       ]
     );
 
@@ -337,6 +347,220 @@ async function handleResaleDelisted(event: any) {
   console.log(`✅ Resale delisted, token available again`);
 }
 
+async function handleSellerVerified(event: any) {
+  const fields = event.parsedJson as any;
+  console.log(`✅ SellerVerified: ${fields.seller}`);
+
+  await pool.query(
+    `UPDATE sellers 
+     SET is_verified = true, verified_at = $1, verified_by = $2, updated_at = NOW()
+     WHERE address = $3`,
+    [Number(fields.timestamp), fields.verified_by, fields.seller]
+  );
+
+  // Boost all their products in ranking
+  await pool.query(
+    `UPDATE products SET seller_is_verified = true WHERE seller = $1`,
+    [fields.seller]
+  );
+
+  console.log(`✅ Seller verification synced: ${fields.seller}`);
+}
+
+async function handleBuyerVerified(event: any) {
+  const fields = event.parsedJson as any;
+  console.log(`✅ BuyerVerified: ${fields.buyer}`);
+
+  await pool.query(
+    `INSERT INTO verified_buyers (address, verified_at, verified_by, is_active)
+     VALUES ($1, $2, $3, true)
+     ON CONFLICT (address) DO UPDATE SET
+       verified_at = $2,
+       verified_by = $3,
+       is_active   = true`,
+    [fields.buyer, Number(fields.timestamp), fields.verified_by]
+  );
+
+  console.log(`✅ Buyer verification synced: ${fields.buyer}`);
+}
+
+// ── Handler: LicenseIssued ───────────────────────────────────
+async function handleLicenseIssued(event: any) {
+  const f = event.parsedJson as any;
+
+  const licenseId     = f.license_id;
+  const productId     = f.product_id;
+  const buyer         = f.buyer;
+  const licenseType   = Number(f.license_type);
+  const maxAct        = Number(f.max_activations);
+  const expiry        = Number(f.expiry_timestamp);
+  const timestamp     = Number(f.timestamp);
+
+  console.log(`🔑 LicenseIssued: ${licenseId} → ${buyer}`);
+
+  try {
+    // Fetch seller from products table
+    const productRow = await pool.query(
+      'SELECT seller, license_renewal_price FROM products WHERE id = $1',
+      [productId]
+    );
+    const seller       = productRow.rows[0]?.seller       || '';
+    const renewalPrice = productRow.rows[0]?.license_renewal_price || 0;
+
+    await pool.query(
+      `INSERT INTO licenses (
+         license_id, product_id, buyer_address, seller_address,
+         tx_digest, license_type, max_activations, current_activations,
+         expiry_timestamp, renewal_price, status, renewal_count, issue_timestamp
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,'active',0,$10)
+       ON CONFLICT (license_id) DO NOTHING`,
+      [
+        licenseId, productId, buyer, seller,
+        event.id.txDigest, licenseType, maxAct,
+        expiry, renewalPrice, timestamp,
+      ]
+    );
+
+    console.log(`✅ License stored: ${licenseId}`);
+  } catch (error) {
+    console.error(`❌ Error handling LicenseIssued ${licenseId}:`, error);
+  }
+}
+
+// ── Handler: LicenseActivated ────────────────────────────────
+async function handleLicenseActivated(event: any) {
+  const f = event.parsedJson as any;
+
+  const licenseId      = f.license_id;
+  const deviceId       = f.device_id;
+  const activationsUsed = Number(f.activations_used);
+  const timestamp      = Number(f.timestamp);
+
+  console.log(`🖥️  LicenseActivated: ${licenseId} device:${deviceId.slice(0, 16)}…`);
+
+  try {
+    await pool.query(
+      `INSERT INTO license_activations (license_id, device_id, activated_at, is_active)
+       VALUES ($1,$2,$3,true)
+       ON CONFLICT (license_id, device_id) DO UPDATE SET
+         is_active = true, activated_at = $3, deactivated_at = NULL`,
+      [licenseId, deviceId, timestamp]
+    );
+
+    await pool.query(
+      `UPDATE licenses SET current_activations = $1, updated_at = NOW()
+       WHERE license_id = $2`,
+      [activationsUsed, licenseId]
+    );
+
+    console.log(`✅ Activation recorded (${activationsUsed} active)`);
+  } catch (error) {
+    console.error(`❌ Error handling LicenseActivated ${licenseId}:`, error);
+  }
+}
+
+// ── Handler: LicenseDeactivated ──────────────────────────────
+async function handleLicenseDeactivated(event: any) {
+  const f = event.parsedJson as any;
+
+  const licenseId      = f.license_id;
+  const deviceId       = f.device_id;
+  const activationsUsed = Number(f.activations_used);
+  const timestamp      = Number(f.timestamp);
+
+  console.log(`🗑️  LicenseDeactivated: ${licenseId}`);
+
+  try {
+    await pool.query(
+      `UPDATE license_activations
+       SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2 AND device_id = $3`,
+      [timestamp, licenseId, deviceId]
+    );
+
+    await pool.query(
+      `UPDATE licenses SET current_activations = $1, updated_at = NOW()
+       WHERE license_id = $2`,
+      [activationsUsed, licenseId]
+    );
+
+    console.log(`✅ Deactivation recorded (${activationsUsed} active)`);
+  } catch (error) {
+    console.error(`❌ Error handling LicenseDeactivated ${licenseId}:`, error);
+  }
+}
+
+// ── Handler: LicenseRenewed ──────────────────────────────────
+async function handleLicenseRenewed(event: any) {
+  const f = event.parsedJson as any;
+
+  const licenseId    = f.license_id;
+  const owner        = f.owner;
+  const newExpiry    = Number(f.new_expiry);
+  const renewalCount = Number(f.renewal_count);
+  const timestamp    = Number(f.timestamp);
+
+  console.log(`♻️  LicenseRenewed: ${licenseId} → expires ${new Date(newExpiry).toLocaleDateString()}`);
+
+  try {
+    // Get old expiry for audit record
+    const current = await pool.query(
+      'SELECT expiry_timestamp FROM licenses WHERE license_id = $1',
+      [licenseId]
+    );
+    const oldExpiry = current.rows[0]?.expiry_timestamp || 0;
+
+    await pool.query(
+      `UPDATE licenses
+       SET expiry_timestamp = $1, status = 'active',
+           renewal_count = $2, updated_at = NOW()
+       WHERE license_id = $3`,
+      [newExpiry, renewalCount, licenseId]
+    );
+
+    await pool.query(
+      `INSERT INTO license_renewals (
+         license_id, buyer_address, amount_paid, tx_digest,
+         old_expiry, new_expiry, renewal_number, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [licenseId, owner, 0, event.id.txDigest, oldExpiry, newExpiry, renewalCount, timestamp]
+    );
+
+    console.log(`✅ Renewal recorded (count: ${renewalCount})`);
+  } catch (error) {
+    console.error(`❌ Error handling LicenseRenewed ${licenseId}:`, error);
+  }
+}
+
+// ── Handler: LicenseRevoked ──────────────────────────────────
+async function handleLicenseRevoked(event: any) {
+  const f = event.parsedJson as any;
+
+  const licenseId = f.license_id;
+  const timestamp = Number(f.timestamp);
+
+  console.log(`🚫 LicenseRevoked: ${licenseId}`);
+
+  try {
+    await pool.query(
+      `UPDATE licenses SET status = 'revoked', updated_at = NOW()
+       WHERE license_id = $1`,
+      [licenseId]
+    );
+
+    await pool.query(
+      `UPDATE license_activations
+       SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2`,
+      [timestamp, licenseId]
+    );
+
+    console.log(`✅ License revoked in DB`);
+  } catch (error) {
+    console.error(`❌ Error handling LicenseRevoked ${licenseId}:`, error);
+  }
+}
+
 // ── Main polling loop ─────────────────────────────────────────────────────────
 
 async function processEvents() {
@@ -368,6 +592,13 @@ async function processEvents() {
           case 'ResaleListed':         await handleResaleListed(suiEvent);         break;
           case 'ResalePurchased':      await handleResalePurchased(suiEvent);      break;
           case 'ResaleDelisted':       await handleResaleDelisted(suiEvent);       break;
+          case 'SellerVerified':       await handleSellerVerified(suiEvent);       break;
+          case 'BuyerVerified':        await handleBuyerVerified(suiEvent);        break;
+          case 'LicenseIssued':      await handleLicenseIssued(suiEvent);      break;
+          case 'LicenseActivated':   await handleLicenseActivated(suiEvent);   break;
+          case 'LicenseDeactivated': await handleLicenseDeactivated(suiEvent); break;
+          case 'LicenseRenewed':     await handleLicenseRenewed(suiEvent);     break;
+          case 'LicenseRevoked':     await handleLicenseRevoked(suiEvent);     break;
           default: console.log(`ℹ️  Unknown event: ${eventType}`);
         }
 

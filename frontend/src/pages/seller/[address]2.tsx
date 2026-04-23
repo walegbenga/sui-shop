@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useFollowSeller } from '@/hooks/useSocialFeatures';
 import ProductDetailModal from '@/components/ProductDetailModal';
-import VerifiedBadge from '@/components/VerifiedBadge';
 import { UserIcon } from '@heroicons/react/24/outline';
+import { API_URL } from '@/lib/api';
 
 export default function SellerProfile() {
   const router = useRouter();
@@ -23,19 +23,23 @@ export default function SellerProfile() {
   );
 
   useEffect(() => {
-    if (address) fetchSellerData();
+    if (address) {
+      fetchSellerData();
+    }
   }, [address]);
 
   const fetchSellerData = async () => {
     setLoading(true);
+
     try {
-      const [sellerRes, productsRes] = await Promise.all([
-        fetch(`http://localhost:4000/api/sellers/${address}`),
-        fetch(`http://localhost:4000/api/sellers/${address}/products`),
-      ]);
+      // Fetch seller info
+      const sellerRes = await fetch(`${API_URL}/api/sellers/${address}`);
       const sellerData = await sellerRes.json();
-      const productsData = await productsRes.json();
       setSeller(sellerData);
+
+      // Fetch seller products
+      const productsRes = await fetch(`${API_URL}/api/sellers/${address}/products`);
+      const productsData = await productsRes.json();
       setProducts(productsData.products || []);
     } catch (error) {
       console.error('Error fetching seller data:', error);
@@ -47,7 +51,7 @@ export default function SellerProfile() {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto py-12 px-4 text-center">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent" />
+        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
         <p className="mt-2 text-gray-600">Loading seller profile...</p>
       </div>
     );
@@ -63,46 +67,23 @@ export default function SellerProfile() {
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4">
-
-      {/* ── Seller Header ── */}
-      <div className={`bg-white rounded-lg shadow p-6 mb-8 ${seller.is_verified ? 'ring-2 ring-blue-400' : ''}`}>
+      {/* Seller Header */}
+      <div className="bg-white rounded-lg shadow p-6 mb-8">
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-4">
-
-            {/* Avatar with verified ring */}
-            <div className="relative">
-              <div className={`h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold ${seller.is_verified ? 'ring-4 ring-blue-400 ring-offset-2' : ''}`}>
-                {seller.address.slice(2, 4).toUpperCase()}
-              </div>
-              {seller.is_verified && (
-                <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
-                  <VerifiedBadge type="seller" size="md" />
-                </div>
-              )}
+            <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+              {seller.address.slice(2, 4).toUpperCase()}
             </div>
-
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-gray-900">Seller Profile</h1>
-                {seller.is_verified && (
-                  <VerifiedBadge type="seller" size="sm" showLabel />
-                )}
-              </div>
+              <h1 className="text-2xl font-bold text-gray-900">Seller Profile</h1>
               <p className="text-sm font-mono text-gray-500 mt-1">
                 {seller.address}
               </p>
-              <div className="mt-2 flex items-center flex-wrap gap-4 text-sm text-gray-600">
+              <div className="mt-2 flex items-center space-x-4 text-sm text-gray-600">
                 <span>👥 {seller.follower_count} followers</span>
                 <span>📦 {seller.total_sales} sales</span>
                 <span>💰 {(Number(seller.total_revenue) / 1e9).toFixed(2)} SUI revenue</span>
               </div>
-
-              {/* Verified perks callout */}
-              {seller.is_verified && (
-                <div className="mt-3 flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full w-fit">
-                  ✨ Verified seller — 1.5% platform fee · Priority listing · Trusted
-                </div>
-              )}
             </div>
           </div>
 
@@ -122,7 +103,7 @@ export default function SellerProfile() {
         </div>
       </div>
 
-      {/* ── Products Grid ── */}
+      {/* Seller Products */}
       <div>
         <h2 className="text-xl font-bold text-gray-900 mb-4">
           Products ({products.length})
@@ -146,19 +127,13 @@ export default function SellerProfile() {
               >
                 <div className="relative">
                   <img
-                    src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
+                    src={product.image_url}
                     alt={product.title}
                     className="w-full h-48 object-cover rounded-t-lg"
-                    onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
                   />
                   {!product.is_available && (
                     <div className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">
                       SOLD
-                    </div>
-                  )}
-                  {product.resellable && (
-                    <div className="absolute bottom-2 left-2 bg-purple-600 text-white px-2 py-1 rounded-full text-xs font-semibold">
-                      🔄 Resellable
                     </div>
                   )}
                 </div>
@@ -166,6 +141,7 @@ export default function SellerProfile() {
                 <div className="p-4">
                   <h3 className="font-semibold text-gray-900 truncate">{product.title}</h3>
                   <p className="text-sm text-gray-500 line-clamp-2 mb-3">{product.description}</p>
+
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xl font-bold text-indigo-600">

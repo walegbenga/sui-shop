@@ -9,6 +9,10 @@ import { useFavoriteProduct, useFollowSeller } from '@/hooks/useSocialFeatures';
 import { useCart } from '@/contexts/CartContext';
 import AuthButton from './AuthButton';
 import { API_URL } from '@/lib/api';
+import VerifiedBadge from '@/components/VerifiedBadge';
+import { useVerification } from '@/hooks/useVerification';
+import LicenseKeyDisplay from '@/components/LicenseKeyDisplay';
+
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
@@ -45,6 +49,7 @@ interface Review {
   rating: number;
   comment: string;
   created_at: string;
+   reviewer_is_verified_buyer?: boolean;
 }
 
 interface ProductDetailModalProps {
@@ -72,6 +77,7 @@ export default function ProductDetailModal({ productId, isOpen, onClose }: Produ
 
   const { isFavorited, toggleFavorite } = useFavoriteProduct(productId || '', account?.address);
   const { isFollowing, toggleFollow } = useFollowSeller(product?.seller || '', account?.address);
+  const { isVerifiedSeller: sellerIsVerified } = useVerification(product?.seller);
 
   useEffect(() => {
     if (productId && isOpen) {
@@ -693,10 +699,13 @@ useEffect(() => {
 
                         <div className="mb-6 p-4 bg-gray-50 rounded-xl">
                           <div className="text-xs text-gray-500 mb-1">Seller</div>
-                          <div className="text-sm font-mono text-gray-800">
-                            {product.seller.slice(0, 8)}...{product.seller.slice(-6)}
-                          </div>
-                        </div>
+  <div className="flex items-center gap-2">
+    <span className="text-sm font-mono text-gray-800">
+      {product.seller.slice(0, 8)}...{product.seller.slice(-6)}
+    </span>
+    {sellerIsVerified && <VerifiedBadge type="seller" size="sm" showLabel />}
+  </div>
+</div>
 
                         {Number(product.rating_count) > 0 && (
                           <div className="mb-6 flex items-center gap-2">
@@ -762,7 +771,15 @@ useEffect(() => {
                             </svg>
                             Download File
                           </button>
+                          
                         )}
+
+                        {hasPurchased && product && account && (
+     <LicenseKeyDisplay
+       productId={product.id}
+       compact={false}
+     />
+   )}
 
                         {account && product.resellable && (ownsToken || userListing) && (
                           userListing ? (
@@ -852,25 +869,28 @@ useEffect(() => {
                           <h3 className="font-bold text-lg mb-3">Reviews ({reviews.length})</h3>
                           <div className="space-y-3">
                             {reviews.map((review, idx) => (
-                              <div key={idx} className="bg-gray-50 p-4 rounded-xl">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-yellow-500 text-sm">{'⭐'.repeat(review.rating)}</span>
-                                  <span className="text-xs text-gray-500">
-                                    {(() => {
-                                      const timestamp = Number(review.created_at);
-                                      if (isNaN(timestamp) || timestamp === 0) return 'Recently';
-                                      const date = new Date(timestamp);
-                                      return date.toLocaleDateString('en-US', {
-                                        year: 'numeric',
-                                        month: 'short',
-                                        day: 'numeric'
-                                      });
-                                    })()}
-                                  </span>
-                                </div>
-                                <p className="text-sm text-gray-700">{review.comment}</p>
-                              </div>
-                            ))}
+  <div key={idx} className={`p-4 rounded-xl ${review.reviewer_is_verified_buyer ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-gray-50'}`}>
+    <div className="flex items-center gap-2 mb-2 flex-wrap">
+      <span className="text-yellow-500 text-sm">{'⭐'.repeat(review.rating)}</span>
+      {review.reviewer_is_verified_buyer && (
+        <VerifiedBadge type="buyer" size="sm" showLabel />
+      )}
+      <span className="text-xs text-gray-500 ml-auto">
+        {(() => {
+          const timestamp = Number(review.created_at);
+          if (isNaN(timestamp) || timestamp === 0) return 'Recently';
+          return new Date(timestamp).toLocaleDateString('en-US', {
+            year: 'numeric', month: 'short', day: 'numeric'
+          });
+        })()}
+      </span>
+    </div>
+    <p className="text-xs text-gray-400 mb-1 font-mono">
+      {review.reviewer.slice(0, 8)}...{review.reviewer.slice(-6)}
+    </p>
+    <p className="text-sm text-gray-700">{review.comment}</p>
+  </div>
+))}
                           </div>
                         </div>
                       )}

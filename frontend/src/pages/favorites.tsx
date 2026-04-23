@@ -1,174 +1,125 @@
+// ─────────────────────────────────────────────────────────────
+// favorites.tsx
+// ─────────────────────────────────────────────────────────────
 import { useState, useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import ProductDetailModal from '@/components/ProductDetailModal';
-import { API_URL } from '@/lib/api';
 
 interface Favorite {
-  product_id: string;
-  title: string;
-  price: string;
-  image_url: string;
-  category: string;
-  seller: string;
-  favorited_at: string;
+  product_id: string; title: string; price: string;
+  image_url: string; category: string; seller: string; favorited_at: string;
 }
 
 export default function Favorites() {
   const account = useCurrentAccount();
-  const [favorites, setFavorites] = useState<Favorite[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [favorites, setFavorites]           = useState<Favorite[]>([]);
+  const [loading, setLoading]               = useState(true);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen]       = useState(false);
 
-  useEffect(() => {
-    if (account?.address) {
-      fetchFavorites();
-    } else {
-      setLoading(false);
-    }
-  }, [account?.address]);
+  useEffect(() => { account?.address ? fetchFavorites() : setLoading(false); }, [account?.address]);
 
   const fetchFavorites = async () => {
     if (!account?.address) return;
     setLoading(true);
     try {
-      const response = await fetch(
-        `${API_URL}/api/users/${account.address}/favorites`
-      );
-      const data = await response.json();
+      const res  = await fetch(`http://localhost:4000/api/users/${account.address}/favorites`);
+      const data = await res.json();
       setFavorites(data.favorites || []);
-    } catch (error) {
-      console.error('Error fetching favorites:', error);
-      toast.error('Failed to fetch favorites');
-    } finally {
-      setLoading(false);
-    }
+    } catch { toast.error('Failed to fetch favorites'); }
+    finally { setLoading(false); }
   };
 
   const handleUnfavorite = async (productId: string) => {
     if (!account?.address) return;
     try {
-      const response = await fetch(`${API_URL}/api/favorites`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: account.address,
-          productId,
-        }),
+      const res = await fetch('http://localhost:4000/api/favorites', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userAddress: account.address, productId }),
       });
-
-      if (response.ok) {
-        // Optimistically remove from UI immediately
-        setFavorites((prev) => prev.filter((f) => f.product_id !== productId));
-        toast.success('Removed from favorites');
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to remove favorite');
-      }
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
-    }
+      if (res.ok) { setFavorites(prev => prev.filter(f => f.product_id !== productId)); toast.success('Removed'); }
+      else { const e = await res.json(); toast.error(e.error || 'Failed'); }
+    } catch (e: any) { toast.error(e.message); }
   };
 
-  const openProduct = (productId: string) => {
-    setSelectedProductId(productId);
-    setIsModalOpen(true);
-  };
+  const open = (id: string) => { setSelectedProductId(id); setIsModalOpen(true); };
 
-  if (!account) {
-    return (
-      <div className="max-w-7xl mx-auto py-12 px-4">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Wallet Not Connected</h2>
-          <p className="text-gray-600">Please connect your wallet to view your favorites.</p>
-        </div>
+  if (!account) return (
+    <div style={{ maxWidth: 480, margin: '80px auto', padding: '0 16px', textAlign: 'center' }}>
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 18, padding: 32 }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: 'var(--text-primary)', marginBottom: 8 }}>Wallet Not Connected</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Connect your wallet to view your favorites.</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">❤️ My Favorites</h1>
-        <p className="text-gray-500 mt-1">Products you've saved</p>
+    <div style={{ color: 'var(--text-primary)' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, marginBottom: 2 }}>Favorites</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Products you've saved</p>
       </div>
 
       {loading ? (
-        <div className="text-center py-12">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent" />
-          <p className="mt-2 text-gray-600">Loading favorites...</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16 }}>
+          {Array.from({length:6}).map((_,i) => (
+            <div key={i} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, overflow: 'hidden' }}>
+              <div className="skeleton" style={{ height: 160 }} />
+              <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="skeleton" style={{ height: 13, width: '70%' }} />
+                <div className="skeleton" style={{ height: 11, width: '50%' }} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : favorites.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-          <h3 className="text-sm font-medium text-gray-900">No favorites yet</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Browse the marketplace and save products you like
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500"
-            >
-              Browse Marketplace
-            </Link>
-          </div>
+        <div style={{ textAlign: 'center', padding: '64px 16px', background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: 18 }}>
+          <p style={{ fontSize: 36, marginBottom: 10 }}>🤍</p>
+          <p style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>No favorites yet</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>Browse and save products you like</p>
+          <Link href="/" style={{ background: 'linear-gradient(135deg,var(--gold),var(--gold-dim))', color: '#0c0c0f', padding: '10px 20px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+            Browse Marketplace
+          </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {favorites.map((favorite) => (
-            <div
-              key={favorite.product_id}
-              className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow"
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16 }}>
+          {favorites.map(fav => (
+            <div key={fav.product_id}
+              style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', transition: 'border-color .25s,box-shadow .25s,transform .2s', cursor: 'pointer' }}
+              onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border-hover)'; el.style.transform = 'translateY(-2px)'; el.style.boxShadow = '0 8px 24px rgba(0,0,0,.4)'; }}
+              onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border)'; el.style.transform = 'none'; el.style.boxShadow = 'none'; }}
             >
-              <div className="relative">
-                <img
-                  src={favorite.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
-                  alt={favorite.title}
-                  className="w-full h-48 object-cover cursor-pointer"
-                  onClick={() => openProduct(favorite.product_id)}
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image';
-                  }}
-                />
+              <div style={{ position: 'relative' }}>
+                <img src={fav.image_url || 'https://via.placeholder.com/220x160'} alt={fav.title}
+                  style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }}
+                  onClick={() => open(fav.product_id)}
+                  onError={e => { e.currentTarget.src = 'https://via.placeholder.com/220x160'; }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(12,12,15,.5) 0%,transparent 50%)' }} />
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUnfavorite(favorite.product_id);
-                  }}
-                  className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-all shadow-lg"
-                  title="Remove from favorites"
-                >
-                  <svg className="w-6 h-6 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
-                  </svg>
+                  onClick={e => { e.stopPropagation(); handleUnfavorite(fav.product_id); }}
+                  style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: '50%', background: 'rgba(12,12,15,.7)', border: '1px solid rgba(255,255,255,.08)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  ❤️
                 </button>
               </div>
-
-              <div className="p-4">
-                <h3
-                  className="text-lg font-semibold text-gray-900 mb-2 cursor-pointer hover:text-indigo-600"
-                  onClick={() => openProduct(favorite.product_id)}
-                >
-                  {favorite.title}
-                </h3>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">{favorite.category}</span>
-                  <span className="text-lg font-bold text-indigo-600">
-                    {(Number(favorite.price) / 1e9).toFixed(2)} SUI
+              <div style={{ padding: 12 }}>
+                <p style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                  onClick={() => open(fav.product_id)}>
+                  {fav.title}
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fav.category}</span>
+                  <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15, color: 'var(--gold-light)' }}>
+                    {(Number(fav.price)/1e9).toFixed(2)} <span style={{ fontSize: 10, fontFamily: "'DM Sans',sans-serif", color: 'var(--text-muted)' }}>SUI</span>
                   </span>
                 </div>
-
-                <p className="text-xs text-gray-400 mt-2">
-                  Saved {new Date(Number(favorite.favorited_at || 0)).toLocaleDateString()}
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>
+                  Saved {new Date(fav.favorited_at).toLocaleDateString()}
                 </p>
-
-                <button
-                  onClick={() => openProduct(favorite.product_id)}
-                  className="w-full mt-4 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-500 transition-colors font-semibold"
-                >
+                <button onClick={() => open(fav.product_id)}
+                  style={{ width: '100%', padding: '8px 0', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'linear-gradient(135deg,var(--gold),var(--gold-dim))', color: '#0c0c0f', fontFamily: "'DM Sans',sans-serif" }}>
                   View Product
                 </button>
               </div>
@@ -177,15 +128,8 @@ export default function Favorites() {
         </div>
       )}
 
-      <ProductDetailModal
-        productId={selectedProductId}
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedProductId(null);
-          fetchFavorites();
-        }}
-      />
+      <ProductDetailModal productId={selectedProductId} isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); setSelectedProductId(null); fetchFavorites(); }} />
     </div>
   );
 }

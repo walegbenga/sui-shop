@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useCurrentAccount } from '@mysten/dapp-kit';
+import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import ProductDetailModal from '@/components/ProductDetailModal';
@@ -7,32 +7,24 @@ import ProductCardSkeleton from '@/components/skeletons/ProductCardSkeleton';
 import { HeartIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useFavoriteProduct } from '@/hooks/useSocialFeatures';
-import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { API_URL } from '@/lib/api';
+import VerifiedBadge from '@/components/VerifiedBadge';
 
-const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
+const PACKAGE_ID    = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
-const CATEGORIES = ['All', 'Ebook', 'Evideo', 'Stickers', 'Software Plugin', 'Music', 'Other'];
-
-const VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.wmv', '.mpeg'];
-const isVideoUrl = (url: string) => {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  return VIDEO_EXTENSIONS.some(ext => lower.includes(ext)) || lower.includes('video/');
-};
+const CATEGORIES = ['All', 'Electronics', 'Fashion', 'Home', 'Sports', 'Books'];
 const PRICE_RANGES = [
-  { label: 'All Prices', min: null, max: null },
-  { label: 'Under 1 SUI', min: null, max: 1000000000 },
-  { label: '1 - 5 SUI', min: 1000000000, max: 5000000000 },
-  { label: 'Over 5 SUI', min: 5000000000, max: null },
+  { label: 'Any Price',      min: null,       max: null       },
+  { label: '< 1 SUI',        min: null,       max: 1000000000 },
+  { label: '1 – 5 SUI',      min: 1000000000, max: 5000000000 },
+  { label: '> 5 SUI',        min: 5000000000, max: null       },
 ];
 const SORT_OPTIONS = [
-  { label: 'Newest First', value: 'created_at', order: 'DESC' },
-  { label: 'Price: Low to High', value: 'price', order: 'ASC' },
-  { label: 'Price: High to Low', value: 'price', order: 'DESC' },
-  { label: 'Most Popular', value: 'total_sales', order: 'DESC' },
+  { label: 'Newest',         value: 'created_at', order: 'DESC' },
+  { label: 'Price ↑',        value: 'price',      order: 'ASC'  },
+  { label: 'Price ↓',        value: 'price',      order: 'DESC' },
+  { label: 'Top Sellers',    value: 'total_sales', order: 'DESC' },
 ];
 
 interface Product {
@@ -49,6 +41,7 @@ interface Product {
   available_quantity: number;
   resellable: boolean;
   file_cid?: string;
+  seller_is_verified?: boolean;
 }
 
 interface ResaleListing {
@@ -59,7 +52,6 @@ interface ResaleListing {
   original_product_id: string;
   is_active: boolean;
   created_at: string;
-  // joined product fields
   product_title?: string;
   product_image?: string;
   product_category?: string;
@@ -74,32 +66,130 @@ interface Pagination {
   totalPages: number;
 }
 
+// ── Favourite Button ──────────────────────────────────────────────────────────
 function FavoriteButton({ productId }: { productId: string }) {
   const account = useCurrentAccount();
   const { isFavorited, loading, toggleFavorite } = useFavoriteProduct(productId, account?.address);
-
   if (!account) return null;
-
   return (
     <button
-      onClick={(e) => {
-        e.stopPropagation();
-        toggleFavorite();
-      }}
+      onClick={(e) => { e.stopPropagation(); toggleFavorite(); }}
       disabled={loading}
-      className="absolute top-2 left-2 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-white transition-all"
+      className="absolute top-2 left-2 p-1.5 rounded-full backdrop-blur-sm transition-all"
+      style={{ background: 'rgba(12,12,15,0.7)', border: '1px solid rgba(255,255,255,0.08)' }}
     >
-      {isFavorited ? (
-        <HeartIconSolid className="h-5 w-5 text-red-500" />
-      ) : (
-        <HeartIcon className="h-5 w-5 text-gray-600" />
-      )}
+      {isFavorited
+        ? <HeartIconSolid className="h-4 w-4" style={{ color: '#f87171' }} />
+        : <HeartIcon className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />}
     </button>
   );
 }
 
-// ── Resale Card ───────────────────────────────────────────────────────────────
+// ── Product Card ──────────────────────────────────────────────────────────────
+function ProductCard({
+  product,
+  onClick,
+}: {
+  product: Product;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className="card cursor-pointer animate-fade-up"
+      style={{ overflow: 'hidden' }}
+    >
+      {/* Image */}
+      <div className="relative overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        <img
+          src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
+          alt={product.title}
+          className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+          loading="lazy"
+          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
+        />
 
+        {/* Gradient overlay */}
+        <div
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(to top, rgba(12,12,15,0.6) 0%, transparent 50%)' }}
+        />
+
+        {/* Badges */}
+        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+          {!product.is_available && (
+            <span className="badge badge-red text-xs">Sold Out</span>
+          )}
+          {product.is_available && product.quantity > 1 && (
+            <span className="badge badge-gold text-xs">
+              {product.available_quantity}/{product.quantity}
+            </span>
+          )}
+          {product.resellable && (
+            <span className="badge badge-purple text-xs">Resellable</span>
+          )}
+        </div>
+
+        <FavoriteButton productId={product.id} />
+
+        {/* Verified seller corner indicator */}
+        {product.seller_is_verified && (
+          <div className="absolute bottom-2 right-2">
+            <VerifiedBadge type="seller" size="sm" />
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3
+            className="font-semibold text-sm truncate flex-1"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {product.title}
+          </h3>
+          <span className="badge badge-blue flex-shrink-0">{product.category}</span>
+        </div>
+
+        <p
+          className="text-xs line-clamp-2 mb-3"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {product.description}
+        </p>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <span
+              className="text-lg font-bold"
+              style={{ fontFamily: "'DM Serif Display', serif", color: 'var(--gold-light)' }}
+            >
+              {(Number(product.price) / 1e9).toFixed(2)}
+            </span>
+            <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>SUI</span>
+          </div>
+          {Number(product.total_sales) > 0 && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {product.total_sales} sold
+            </span>
+          )}
+        </div>
+
+        <Link
+  href={`/seller/${product.seller}`}
+  onClick={(e) => e.stopPropagation()}
+  className="mt-2 text-xs text-gray-500 hover:text-indigo-600 block truncate transition-colors flex items-center gap-1"
+>
+  By: {product.seller.slice(0, 10)}...{product.seller.slice(-8)}
+  {product.seller_is_verified && <VerifiedBadge type="seller" size="sm" />}
+</Link>
+      </div>
+    </div>
+  );
+}
+
+// ── Resale Card ───────────────────────────────────────────────────────────────
 function ResaleCard({
   listing,
   onBuy,
@@ -113,60 +203,75 @@ function ResaleCard({
   const isOwner = account?.address === listing.seller;
 
   return (
-    <div className="bg-white rounded-lg shadow hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:-translate-y-1">
-      <div className="relative group">
+    <div
+      className="card cursor-pointer animate-fade-up"
+      style={{ overflow: 'hidden' }}
+    >
+      <div className="relative overflow-hidden" style={{ aspectRatio: '4/3' }}>
         <img
           src={listing.product_image || 'https://via.placeholder.com/400x300?text=No+Image'}
-          alt={listing.product_title || 'Resale Product'}
-          className="w-full h-48 object-cover rounded-t-lg"
+          alt={listing.product_title || 'Resale'}
+          className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
           loading="lazy"
-          onError={(e) => {
-            e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image';
-          }}
+          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
           onClick={() => onViewProduct(listing.original_product_id)}
         />
-        <div className="absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded-full text-xs font-semibold">
-          🔄 Resale
+        <div
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(to top, rgba(12,12,15,0.6) 0%, transparent 50%)' }}
+        />
+        <div className="absolute top-2 right-2">
+          <span className="badge badge-purple">🔄 Resale</span>
         </div>
       </div>
 
       <div className="p-4">
         <h3
-          className="font-semibold text-gray-900 truncate cursor-pointer hover:text-indigo-600"
+          className="font-semibold text-sm truncate mb-1"
+          style={{ color: 'var(--text-primary)' }}
           onClick={() => onViewProduct(listing.original_product_id)}
         >
           {listing.product_title || 'Unknown Product'}
         </h3>
-        <p className="text-sm text-gray-500 line-clamp-2 mb-3">
-          {listing.product_description || ''}
+        <p className="text-xs line-clamp-2 mb-3" style={{ color: 'var(--text-muted)' }}>
+          {listing.product_description}
         </p>
 
         <div className="flex items-center justify-between mb-3">
           <div>
-            <span className="text-xl font-bold text-indigo-600">
+            <span
+              className="text-lg font-bold"
+              style={{ fontFamily: "'DM Serif Display', serif", color: 'var(--gold-light)' }}
+            >
               {(Number(listing.price) / 1e9).toFixed(2)}
             </span>
-            <span className="text-sm text-gray-500 ml-1">SUI</span>
+            <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>SUI</span>
           </div>
           {listing.product_category && (
-            <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10">
-              {listing.product_category}
-            </span>
+            <span className="badge badge-blue">{listing.product_category}</span>
           )}
         </div>
 
-        <p className="text-xs text-gray-400 mb-3 truncate">
-          Seller: {listing.seller.slice(0, 8)}...{listing.seller.slice(-6)}
-        </p>
+       <p className="text-xs text-gray-400 mb-3 truncate flex items-center gap-1">
+  Seller: {listing.seller.slice(0, 8)}...{listing.seller.slice(-6)}
+</p>
 
         {isOwner ? (
-          <div className="w-full bg-gray-100 text-gray-500 py-2 rounded-lg text-sm font-medium text-center">
+          <div
+            className="w-full py-2 rounded-xl text-xs font-medium text-center"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}
+          >
             Your Listing
           </div>
         ) : (
           <button
             onClick={() => onBuy(listing)}
-            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg hover:from-purple-500 hover:to-pink-500 transition-all font-semibold text-sm"
+            className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed, #db2777)',
+              color: 'white',
+              boxShadow: '0 2px 12px rgba(124,58,237,0.3)',
+            }}
           >
             Buy Resale
           </button>
@@ -177,40 +282,29 @@ function ResaleCard({
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-
 export default function Home() {
   const account = useCurrentAccount();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts]           = useState<Product[]>([]);
   const [resaleListings, setResaleListings] = useState<ResaleListing[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]             = useState(true);
   const [resaleLoading, setResaleLoading] = useState(true);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'products' | 'resale'>('products');
+  const [isModalOpen, setIsModalOpen]     = useState(false);
+  const [activeTab, setActiveTab]         = useState<'products' | 'resale'>('products');
 
-  // Filters
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory]     = useState('All');
   const [selectedPriceRange, setSelectedPriceRange] = useState(PRICE_RANGES[0]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState(SORT_OPTIONS[0]);
-  const [currentPage, setCurrentPage] = useState(1);
-
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: 10,
-    totalCount: 0,
-    totalPages: 0,
+  const [searchQuery, setSearchQuery]               = useState('');
+  const [sortBy, setSortBy]                         = useState(SORT_OPTIONS[0]);
+  const [currentPage, setCurrentPage]               = useState(1);
+  const [pagination, setPagination]                 = useState<Pagination>({
+    page: 1, limit: 12, totalCount: 0, totalPages: 0,
   });
 
-  useEffect(() => {
-    fetchProducts();
-  }, [selectedCategory, selectedPriceRange, searchQuery, sortBy, currentPage]);
-
-  useEffect(() => {
-    fetchResaleListings();
-  }, []);
+  useEffect(() => { fetchProducts(); }, [selectedCategory, selectedPriceRange, searchQuery, sortBy, currentPage]);
+  useEffect(() => { fetchResaleListings(); }, []);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -221,19 +315,17 @@ export default function Home() {
         sortBy: sortBy.value,
         sortOrder: sortBy.order,
       });
-
       if (selectedCategory !== 'All') params.append('category', selectedCategory);
       if (selectedPriceRange.min !== null) params.append('minPrice', selectedPriceRange.min.toString());
       if (selectedPriceRange.max !== null) params.append('maxPrice', selectedPriceRange.max.toString());
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
-      const response = await fetch(`${API_URL}/api/products?${params}`);
-      const data = await response.json();
-
+      const res  = await fetch(`http://localhost:4000/api/products?${params}`);
+      const data = await res.json();
       setProducts(data.products || []);
-      setPagination(data.pagination || { page: 1, limit: 10, totalCount: 0, totalPages: 0 });
-    } catch (error) {
-      console.error('Error fetching products:', error);
+      setPagination(data.pagination || { page: 1, limit: 12, totalCount: 0, totalPages: 0 });
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
@@ -242,393 +334,266 @@ export default function Home() {
   const fetchResaleListings = async () => {
     setResaleLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/resale-listings`);
-      const data = await response.json();
+      const res  = await fetch('http://localhost:4000/api/resale-listings');
+      const data = await res.json();
       setResaleListings(data.listings || []);
-    } catch (error) {
-      console.error('Error fetching resale listings:', error);
+    } catch (e) {
+      console.error(e);
     } finally {
       setResaleLoading(false);
     }
   };
 
   const handleBuyResale = async (listing: ResaleListing) => {
-  if (!account) {
-    toast.error('Please connect your wallet');
-    return;
-  }
+    if (!account) { toast.error('Please connect your wallet'); return; }
+    if (listing.seller === account.address) { toast.error('You cannot buy your own listing'); return; }
 
-  if (listing.seller === account.address) {
-    toast.error('You cannot buy your own listing');
-    return;
-  }
+    toast.loading(`Buying for ${(Number(listing.price) / 1e9).toFixed(2)} SUI…`, { id: 'resale-buy' });
 
-  toast.loading(`Buying resale for ${(Number(listing.price) / 1e9).toFixed(2)} SUI...`, { id: 'resale-buy' });
-
-  try {
-    const tx = new Transaction();
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(listing.price))]);
-
-    tx.moveCall({
-  target: `${PACKAGE_ID}::marketplace::purchase_resale`,
-  arguments: [
-    tx.object(MARKETPLACE_ID),      // platform
-    tx.object(listing.listing_id),  // listing (contains token inside)
-    coin,                           // payment
-    tx.object('0x6'),               // clock
-  ],
-});
-
-    signAndExecuteTransaction(
-      { transaction: tx },
-      {
-        onSuccess: (result) => {
-          console.log('Resale purchase successful:', result);
-          toast.success('Resale purchase successful! 🎉', { id: 'resale-buy' });
-          fetchResaleListings();
-        },
-        onError: (error: any) => {
-          console.error('Resale purchase failed:', error);
-          toast.error(error.message || 'Purchase failed', { id: 'resale-buy' });
-        },
-      }
-    );
-  } catch (error: any) {
-    toast.error('Failed to build transaction', { id: 'resale-buy' });
-  }
-};
-
-  const handleCategoryChange = (category: string) => { setSelectedCategory(category); setCurrentPage(1); };
-  const handlePriceRangeChange = (range: typeof PRICE_RANGES[0]) => { setSelectedPriceRange(range); setCurrentPage(1); };
-  const handleSortChange = (option: typeof SORT_OPTIONS[0]) => { setSortBy(option); setCurrentPage(1); };
-  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); setCurrentPage(1); };
-
-  const openProduct = (productId: string) => {
-    setSelectedProductId(productId);
-    setIsModalOpen(true);
+    try {
+      const tx = new Transaction();
+      const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(listing.price))]);
+      tx.moveCall({
+        target: `${PACKAGE_ID}::marketplace::purchase_resale`,
+        arguments: [tx.object(MARKETPLACE_ID), tx.object(listing.listing_id), coin, tx.object('0x6')],
+      });
+      signAndExecuteTransaction({ transaction: tx }, {
+        onSuccess: () => { toast.success('Resale purchase successful! 🎉', { id: 'resale-buy' }); fetchResaleListings(); },
+        onError:  (e: any) => toast.error(e.message || 'Purchase failed', { id: 'resale-buy' }),
+      });
+    } catch {
+      toast.error('Failed to build transaction', { id: 'resale-buy' });
+    }
   };
 
+  const openProduct = (id: string) => { setSelectedProductId(id); setIsModalOpen(true); };
+
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 animate-fade-in">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">🛍️ Marketplace</h1>
-        <p className="text-gray-500 mt-1">Discover digital products on Sui blockchain</p>
+    <div className="animate-fade-in">
+
+      {/* ── Hero strip ── */}
+      <div
+        className="rounded-2xl mb-8 px-6 py-8 flex items-center justify-between overflow-hidden relative"
+        style={{
+          background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)',
+          border: '1px solid var(--border)',
+        }}
+      >
+        {/* Decorative glow */}
+        <div
+          className="absolute -right-16 -top-16 h-48 w-48 rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(201,168,76,0.08) 0%, transparent 70%)' }}
+        />
+        <div>
+          <h1
+            className="text-3xl font-bold mb-1"
+            style={{ fontFamily: "'DM Serif Display', serif", color: 'var(--text-primary)' }}
+          >
+            Digital Marketplace
+          </h1>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Buy, sell, and resell digital products on Sui blockchain
+          </p>
+        </div>
+        {account && (
+          <Link
+            href="/list-product"
+            className="btn-gold hidden sm:flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
+          >
+            + List Product
+          </Link>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div className="mb-6 flex gap-2 border-b border-gray-200">
-        <button
-          onClick={() => setActiveTab('products')}
-          className={`px-6 py-3 font-semibold text-sm transition-colors border-b-2 -mb-px ${
-            activeTab === 'products'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          🛍️ Products
-          {pagination.totalCount > 0 && (
-            <span className="ml-2 bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-xs">
-              {pagination.totalCount}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('resale')}
-          className={`px-6 py-3 font-semibold text-sm transition-colors border-b-2 -mb-px ${
-            activeTab === 'resale'
-              ? 'border-purple-600 text-purple-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          🔄 Resale Market
-          {resaleListings.length > 0 && (
-            <span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
-              {resaleListings.length}
-            </span>
-          )}
-        </button>
+      {/* ── Tabs ── */}
+      <div
+        className="flex gap-1 mb-6 p-1 rounded-xl w-fit"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}
+      >
+        {[
+          { key: 'products', label: '🛍  Products',    count: pagination.totalCount },
+          { key: 'resale',   label: '🔄  Resale',      count: resaleListings.length },
+        ].map(({ key, label, count }) => {
+          const active = activeTab === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key as any)}
+              className="px-5 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2"
+              style={{
+                background: active ? 'var(--bg-elevated)' : 'transparent',
+                color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: active ? '1px solid var(--border)' : '1px solid transparent',
+              }}
+            >
+              {label}
+              {count > 0 && (
+                <span
+                  className="text-xs px-1.5 py-0.5 rounded-full"
+                  style={{
+                    background: active ? 'rgba(201,168,76,0.12)' : 'var(--bg-hover)',
+                    color: active ? 'var(--gold)' : 'var(--text-muted)',
+                  }}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Products Tab ── */}
       {activeTab === 'products' && (
         <>
-          {/* Search */}
-          <form onSubmit={handleSearch} className="mb-6">
+          {/* Search + Filters */}
+          <div className="mb-6 space-y-4">
+            {/* Search */}
             <div className="relative">
+              <svg
+                className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4"
+                style={{ color: 'var(--text-muted)' }}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products..."
-                className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-400"
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                placeholder="Search products…"
+                className="input-dark w-full pl-11 pr-4 py-3 text-sm"
               />
-              <svg className="absolute left-4 top-3.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
             </div>
-          </form>
 
-          {/* Filters */}
-          <div className="mb-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-              <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map((category) => (
+            {/* Category pills */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+              {CATEGORIES.map((cat) => {
+                const active = selectedCategory === cat;
+                return (
                   <button
-                    key={category}
-                    onClick={() => handleCategoryChange(category)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedCategory === category
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
+                    key={cat}
+                    onClick={() => { setSelectedCategory(cat); setCurrentPage(1); }}
+                    className="px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all flex-shrink-0"
+                    style={{
+                      background: active ? 'var(--gold)' : 'var(--bg-surface)',
+                      color: active ? '#0c0c0f' : 'var(--text-secondary)',
+                      border: `1px solid ${active ? 'var(--gold)' : 'var(--border-subtle)'}`,
+                    }}
                   >
-                    {category}
+                    {cat}
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Price Range</label>
-                <div className="flex flex-wrap gap-2">
-                  {PRICE_RANGES.map((range) => (
-                    <button
-                      key={range.label}
-                      onClick={() => handlePriceRangeChange(range)}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedPriceRange.label === range.label
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {range.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* Price + Sort */}
+            <div className="flex flex-wrap gap-2 items-center">
+              {PRICE_RANGES.map((range) => {
+                const active = selectedPriceRange.label === range.label;
+                return (
+                  <button
+                    key={range.label}
+                    onClick={() => { setSelectedPriceRange(range); setCurrentPage(1); }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    style={{
+                      background: active ? 'rgba(201,168,76,0.12)' : 'var(--bg-surface)',
+                      color: active ? 'var(--gold-light)' : 'var(--text-secondary)',
+                      border: `1px solid ${active ? 'var(--border)' : 'var(--border-subtle)'}`,
+                    }}
+                  >
+                    {range.label}
+                  </button>
+                );
+              })}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+              <div className="ml-auto flex-shrink-0">
                 <select
                   value={sortBy.label}
                   onChange={(e) => {
-                    const option = SORT_OPTIONS.find((opt) => opt.label === e.target.value);
-                    if (option) handleSortChange(option);
+                    const opt = SORT_OPTIONS.find((o) => o.label === e.target.value);
+                    if (opt) { setSortBy(opt); setCurrentPage(1); }
                   }}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900"
+                  className="input-dark px-3 py-1.5 text-xs rounded-lg"
                 >
-                  {SORT_OPTIONS.map((option) => (
-                    <option key={option.label} value={option.label}>{option.label}</option>
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.label} value={opt.label}>{opt.label}</option>
                   ))}
                 </select>
               </div>
             </div>
           </div>
 
-          {/* Results count */}
-          <div className="mb-4">
-            <p className="text-sm text-gray-500">
-              {!loading && pagination.totalCount > 0 && (
-                <>
-                  Showing {(currentPage - 1) * pagination.limit + 1}–
-                  {Math.min(currentPage * pagination.limit, pagination.totalCount)} of{' '}
-                  {pagination.totalCount} product{pagination.totalCount !== 1 ? 's' : ''}
-                </>
-              )}
+          {/* Count */}
+          {!loading && pagination.totalCount > 0 && (
+            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+              {(currentPage - 1) * pagination.limit + 1}–{Math.min(currentPage * pagination.limit, pagination.totalCount)} of {pagination.totalCount} products
             </p>
-          </div>
+          )}
 
-          {/* Products grid */}
+          {/* Grid */}
           {loading ? (
-            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-              {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
+              {Array.from({ length: 12 }).map((_, i) => <ProductCardSkeleton key={i} />)}
             </div>
           ) : products.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-              <h3 className="text-sm font-medium text-gray-900">No products found</h3>
-              <p className="mt-1 text-sm text-gray-500">Try adjusting your filters or search query.</p>
+            <div
+              className="text-center py-20 rounded-2xl"
+              style={{ background: 'var(--bg-surface)', border: '1px dashed var(--border)' }}
+            >
+              <p className="text-4xl mb-3">🔍</p>
+              <p className="font-semibold" style={{ color: 'var(--text-secondary)' }}>No products found</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Try adjusting your filters</p>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
                 {products.map((product) => (
-                  <div
+                  <ProductCard
                     key={product.id}
+                    product={product}
                     onClick={() => openProduct(product.id)}
-                    className="bg-white rounded-lg shadow hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:-translate-y-1"
-                  >
-                    <div className="relative group">
-                      {isVideoUrl(product.image_url) ? (
-                        <div className="relative w-full h-48 bg-gray-900 rounded-t-lg flex items-center justify-center overflow-hidden">
-                          <video
-                            src={product.image_url}
-                            className="w-full h-48 object-cover rounded-t-lg"
-                            muted
-                            preload="metadata"
-                            onMouseEnter={e => (e.currentTarget as HTMLVideoElement).play()}
-                            onMouseLeave={e => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="bg-black/50 rounded-full p-3">
-                              <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                              </svg>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <img
-                          src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
-                          alt={product.title}
-                          className="w-full h-48 object-cover rounded-t-lg"
-                          loading="lazy"
-                          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
-                        />
-                      )}
-                      {!product.is_available && (
-                        <div className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">SOLD</div>
-                      )}
-                      {product.is_available && product.quantity > 1 && (
-                        <div className="absolute top-2 right-2 bg-orange-600 text-white px-2 py-1 rounded text-xs font-semibold">
-                          {product.available_quantity}/{product.quantity} Left
-                        </div>
-                      )}
-                      {product.resellable && (
-                        <div className="absolute bottom-2 left-2 bg-purple-600 text-white px-2 py-1 rounded-full text-xs font-semibold">
-                          🔄 Resellable
-                        </div>
-                      )}
-                      <FavoriteButton productId={product.id} />
-                    </div>
-
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 truncate">{product.title}</h3>
-                      <p className="text-sm text-gray-500 line-clamp-2 mb-3">{product.description}</p>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xl font-bold text-indigo-600">
-                            {(Number(product.price) / 1e9).toFixed(2)}
-                          </span>
-                          <span className="text-sm text-gray-500 ml-1">SUI</span>
-                        </div>
-                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                          {product.category}
-                        </span>
-                      </div>
-                      <Link
-                        href={`/seller/${product.seller}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-2 text-xs text-gray-500 hover:text-indigo-600 block truncate transition-colors"
-                      >
-                        By: {product.seller.slice(0, 10)}...{product.seller.slice(-8)}
-                      </Link>
-                      {Number(product.total_sales) > 0 && (
-                        <div className="mt-2 text-xs text-gray-500">
-                          {product.total_sales} sale{Number(product.total_sales) !== 1 ? 's' : ''}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  />
                 ))}
               </div>
 
               {/* Pagination */}
-{pagination.totalPages > 1 && (
-  <div className="flex items-center justify-center gap-2 mt-8">
-    {/* Previous Button */}
-    <button
-      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-      disabled={currentPage === 1}
-      className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors font-medium text-sm"
-    >
-      Previous
-    </button>
-
-    {/* Page Numbers - Show limited range */}
-    {(() => {
-      const maxVisible = 5;
-      let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-      let endPage = Math.min(pagination.totalPages, startPage + maxVisible - 1);
-      
-      if (endPage - startPage + 1 < maxVisible) {
-        startPage = Math.max(1, endPage - maxVisible + 1);
-      }
-
-      const pages = [];
-      
-      // First page
-      if (startPage > 1) {
-        pages.push(
-          <button
-            key={1}
-            onClick={() => setCurrentPage(1)}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
-          >
-            1
-          </button>
-        );
-        if (startPage > 2) {
-          pages.push(
-            <span key="dots1" className="px-2 text-gray-500">
-              ...
-            </span>
-          );
-        }
-      }
-
-      // Visible pages
-      for (let i = startPage; i <= endPage; i++) {
-        pages.push(
-          <button
-            key={i}
-            onClick={() => setCurrentPage(i)}
-            className={`px-4 py-2 border rounded-lg transition-colors font-medium text-sm ${
-              currentPage === i
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            {i}
-          </button>
-        );
-      }
-
-      // Last page
-      if (endPage < pagination.totalPages) {
-        if (endPage < pagination.totalPages - 1) {
-          pages.push(
-            <span key="dots2" className="px-2 text-gray-500">
-              ...
-            </span>
-          );
-        }
-        pages.push(
-          <button
-            key={pagination.totalPages}
-            onClick={() => setCurrentPage(pagination.totalPages)}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
-          >
-            {pagination.totalPages}
-          </button>
-        );
-      }
-
-      return pages;
-    })()}
-
-    {/* Next Button */}
-    <button
-      onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
-      disabled={currentPage === pagination.totalPages}
-      className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors font-medium text-sm"
-    >
-      Next
-    </button>
-  </div>
-)}
+              {pagination.totalPages > 1 && (
+                <div className="mt-8 flex justify-center items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="btn-ghost px-4 py-2 rounded-lg text-sm disabled:opacity-30"
+                  >
+                    ←
+                  </button>
+                  {Array.from({ length: Math.min(pagination.totalPages, 7) }, (_, i) => {
+                    const page = i + 1;
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                        style={{
+                          background: currentPage === page ? 'var(--gold)' : 'var(--bg-surface)',
+                          color: currentPage === page ? '#0c0c0f' : 'var(--text-secondary)',
+                          border: `1px solid ${currentPage === page ? 'var(--gold)' : 'var(--border-subtle)'}`,
+                        }}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                    disabled={currentPage === pagination.totalPages}
+                    className="btn-ghost px-4 py-2 rounded-lg text-sm disabled:opacity-30"
+                  >
+                    →
+                  </button>
+                </div>
+              )}
             </>
           )}
         </>
@@ -637,26 +602,27 @@ export default function Home() {
       {/* ── Resale Tab ── */}
       {activeTab === 'resale' && (
         <>
-          <div className="mb-6">
-            <p className="text-sm text-gray-500">
-              Resellable NFT products listed by community members
-            </p>
-          </div>
+          <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+            Resellable NFT products listed by community members. Original creator receives 2.5% royalty on every sale.
+          </p>
 
           {resaleLoading ? (
-            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-              {Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
+              {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
             </div>
           ) : resaleListings.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-              <div className="text-4xl mb-4">🔄</div>
-              <h3 className="text-sm font-medium text-gray-900">No resale listings yet</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Resellable products purchased from the marketplace will appear here
+            <div
+              className="text-center py-20 rounded-2xl"
+              style={{ background: 'var(--bg-surface)', border: '1px dashed var(--border)' }}
+            >
+              <p className="text-4xl mb-3">🔄</p>
+              <p className="font-semibold" style={{ color: 'var(--text-secondary)' }}>No resale listings yet</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                Purchase a resellable product to list it here
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
               {resaleListings.map((listing) => (
                 <ResaleCard
                   key={listing.listing_id}

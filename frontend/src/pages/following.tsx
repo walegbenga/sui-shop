@@ -1,71 +1,70 @@
+// ─────────────────────────────────────────────────────────────
+// following.tsx
+// ─────────────────────────────────────────────────────────────
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useUserFollowing } from '@/hooks/useSocialFeatures';
-import { UserGroupIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 
 export default function Following() {
   const account = useCurrentAccount();
   const { following, loading } = useUserFollowing(account?.address);
 
-  if (!account) {
-    return (
-      <div className="max-w-7xl mx-auto py-12 px-4">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Wallet Not Connected</h2>
-          <p className="text-gray-600">Please connect your wallet to view who you're following.</p>
-        </div>
+  if (!account) return (
+    <div style={{ maxWidth: 480, margin: '80px auto', padding: '0 16px', textAlign: 'center' }}>
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 18, padding: 32 }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: 'var(--text-primary)', marginBottom: 8 }}>Wallet Not Connected</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Connect your wallet to view who you're following.</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">👥 Following</h1>
-        <p className="text-gray-500 mt-1">Sellers you're following</p>
+    <div style={{ color: 'var(--text-primary)' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, marginBottom: 2 }}>Following</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Sellers you're following</p>
       </div>
 
       {loading ? (
-        <div className="text-center py-12">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
-          <p className="mt-2 text-gray-600">Loading...</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
+          {Array.from({length:6}).map((_,i) => (
+            <div key={i} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 16, display: 'flex', gap: 14, alignItems: 'center' }}>
+              <div className="skeleton" style={{ width: 52, height: 52, borderRadius: '50%', flexShrink: 0 }} />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <div className="skeleton" style={{ height: 12, width: '60%' }} />
+                <div className="skeleton" style={{ height: 10, width: '40%' }} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : following.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-          <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">Not following anyone yet</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Follow sellers to get updates on their new products!
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500"
-            >
-              Browse Products
-            </Link>
-          </div>
+        <div style={{ textAlign: 'center', padding: '64px 16px', background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: 18 }}>
+          <p style={{ fontSize: 36, marginBottom: 10 }}>👥</p>
+          <p style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>Not following anyone yet</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>Follow sellers to keep up with their new products</p>
+          <Link href="/" style={{ background: 'linear-gradient(135deg,var(--gold),var(--gold-dim))', color: '#0c0c0f', padding: '10px 20px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+            Browse Products
+          </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {following.map((seller) => (
-            <Link
-              key={seller.address}
-              href={`/seller/${seller.address}`}
-              className="bg-white rounded-lg shadow hover:shadow-lg transition-all p-6"
-            >
-              <div className="flex items-center space-x-4">
-                <div className="h-16 w-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold">
-                  {seller.address.slice(2, 4).toUpperCase()}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
+          {following.map((seller: any) => (
+            <Link key={seller.address} href={`/seller/${seller.address}`} style={{ textDecoration: 'none' }}>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, display: 'flex', gap: 14, alignItems: 'center', transition: 'border-color .2s,transform .2s', cursor: 'pointer' }}
+                onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border-hover)'; el.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border)'; el.style.transform = 'none'; }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontFamily: "'DM Serif Display',serif", fontSize: 18, flexShrink: 0 }}>
+                  {seller.address.slice(2,4).toUpperCase()}
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-mono text-gray-600">
-                    {seller.address.slice(0, 10)}...{seller.address.slice(-8)}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
+                    {seller.address.slice(0,10)}…{seller.address.slice(-8)}
                   </p>
-                  <div className="mt-2 space-y-1 text-sm text-gray-500">
-                    <p>💰 Revenue: {(Number(seller.total_revenue) / 1e9).toFixed(2)} SUI</p>
-                    <p>📦 Sales: {seller.total_sales}</p>
-                    <p>👥 Followers: {seller.follower_count}</p>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-muted)' }}>
+                    <span>💰 {(Number(seller.total_revenue)/1e9).toFixed(2)} SUI</span>
+                    <span>📦 {seller.total_sales} sales</span>
+                    <span>👥 {seller.follower_count}</span>
                   </div>
                 </div>
               </div>
