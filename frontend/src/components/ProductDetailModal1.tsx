@@ -13,13 +13,6 @@ import { API_URL } from '@/lib/api';
 const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.NEXT_PUBLIC_MARKETPLACE_ID!;
 
-const VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.wmv', '.mpeg'];
-const isVideoUrl = (url: string) => {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  return VIDEO_EXTENSIONS.some(ext => lower.includes(ext)) || lower.includes('video/');
-};
-
 interface Product {
   id: string;
   title: string;
@@ -642,22 +635,11 @@ useEffect(() => {
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                     <div className="relative bg-gray-100">
-                      {isVideoUrl(product.image_url) ? (
-                        <video
-                          src={product.image_url}
-                          className="w-full h-48 sm:h-72 lg:h-[400px] object-cover"
-                          controls
-                          preload="metadata"
-                          poster=""
-                        />
-                      ) : (
-                        <img
-                          src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
-                          alt={product.title}
-                          className="w-full h-48 sm:h-72 lg:h-[400px] object-cover object-center"
-                          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image'; }}
-                        />
-                      )}
+                      <img
+                        src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
+                        alt={product.title}
+                        className="w-full h-48 sm:h-72 lg:h-[400px] object-cover object-center"
+                      />
                       {product.resellable && (
                         <div className="absolute top-4 left-4 bg-purple-600 text-white px-4 py-2 rounded-full font-semibold shadow-lg flex items-center gap-2">
                           🔄 Resellable NFT
