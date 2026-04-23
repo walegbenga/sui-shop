@@ -6,6 +6,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { XMarkIcon, ShoppingCartIcon } from '@heroicons/react/24/outline';
 import AuthButton from './AuthButton';
+import BalanceDisplay from './BalanceDisplay';
 import Logo from './Logo';
 import { useCart } from '@/contexts/CartContext';
 import toast from 'react-hot-toast';
@@ -51,19 +52,14 @@ export default function Layout({ children }: LayoutProps) {
         <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
-            <Link href="/" className="flex items-center hover:opacity-80 transition-opacity">
-            <img 
-          src="/logo.svg" 
-          alt="Digi ChainStore" 
-          className="h-10 w-10"
-        />
-        <div className="flex flex-col leading-tight">
-          <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-            Digi ChainStore
-          </span>
-          <span className="text-xs text-gray-500">The Digital ChainStore of the People</span>
-        </div>
-              {/*<Logo className="h-10" />*/}
+            <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0">
+              <img src="/logo.svg" alt="Digi ChainStore" className="h-9 w-9 shrink-0" />
+              <div className="flex flex-col leading-tight">
+                <span className="text-lg font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent whitespace-nowrap">
+                  Digi ChainStore
+                </span>
+                <span className="text-xs text-gray-500 hidden sm:block whitespace-nowrap">The Digital ChainStore of the People</span>
+              </div>
             </Link>
 
             {/* Desktop Navigation */}
@@ -87,7 +83,7 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             {/* Right Side Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 min-w-0 shrink-0">
               {/* List Product Button */}
               {account && (
                 <Link
@@ -98,6 +94,9 @@ export default function Layout({ children }: LayoutProps) {
                   <span>List Product</span>
                 </Link>
               )}
+
+              {/* Wallet Balance */}
+              <BalanceDisplay />
 
               {/* Cart Button */}
               <button
@@ -271,7 +270,16 @@ export default function Layout({ children }: LayoutProps) {
                 >
                   <Dialog.Panel className="pointer-events-auto w-screen max-w-sm">
                     <div className="flex h-full flex-col bg-white shadow-xl">
-                      <div className="px-6 py-4 border-b">
+                      <div className="px-6 py-4 border-b flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <img src="/logo.svg" alt="Digi ChainStore" className="h-8 w-8" />
+                          <div className="flex flex-col leading-tight">
+                            <span className="text-base font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                              Digi ChainStore
+                            </span>
+                            <span className="text-xs text-gray-500">The Digital ChainStore of the People</span>
+                          </div>
+                        </div>
                         <button onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-gray-500">
                           <XMarkIcon className="h-6 w-6" />
                         </button>

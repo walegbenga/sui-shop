@@ -614,7 +614,7 @@ useEffect(() => {
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-start sm:items-center justify-center p-2 sm:p-4 pt-4">
+          <div className="flex min-h-full items-center justify-center p-4">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
@@ -634,11 +634,11 @@ useEffect(() => {
                   </button>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
-                    <div className="relative bg-gray-100">
+                    <div className="relative bg-gradient-to-br from-gray-100 to-gray-200">
                       <img
                         src={product.image_url || 'https://via.placeholder.com/400x300?text=No+Image'}
                         alt={product.title}
-                        className="w-full h-48 sm:h-72 lg:h-[400px] object-cover object-center"
+                        className="w-full h-[500px] object-cover"
                       />
                       {product.resellable && (
                         <div className="absolute top-4 left-4 bg-purple-600 text-white px-4 py-2 rounded-full font-semibold shadow-lg flex items-center gap-2">
@@ -887,7 +887,7 @@ useEffect(() => {
     </Transition.Child>
 
     <div className="fixed inset-0 overflow-y-auto">
-      <div className="flex min-h-full items-start sm:items-center justify-center p-2 sm:p-4 pt-4">
+      <div className="flex min-h-full items-center justify-center p-4">
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"

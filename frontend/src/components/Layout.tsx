@@ -48,7 +48,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
         <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
@@ -58,7 +58,7 @@ export default function Layout({ children }: LayoutProps) {
                 <span className="text-lg font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent whitespace-nowrap">
                   Digi ChainStore
                 </span>
-                <span className="text-xs text-gray-500 hidden sm:block whitespace-nowrap">The Digital ChainStore of the People</span>
+                <span className="text-xs text-gray-600 whitespace-nowrap font-medium">The Digital ChainStore of the People</span>
               </div>
             </Link>
 
@@ -83,7 +83,7 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             {/* Right Side Actions */}
-            <div className="flex items-center gap-2 min-w-0 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {/* List Product Button */}
               {account && (
                 <Link
