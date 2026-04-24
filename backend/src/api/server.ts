@@ -35,7 +35,7 @@ app.use(express.json());
 // Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit (for video uploads)
 });
 
 // Initialize Pinata
@@ -204,11 +204,8 @@ app.get('/api/products', async (req, res) => {
       },
     });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching products::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch products', detail: (error as any)?.message });
-    }
+    console.error('Error fetching products::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch products', detail: (error as any)?.message });
   }
 });
 
@@ -238,11 +235,8 @@ app.put('/api/products/:id', async (req, res) => {
 
     res.json({ message: 'Product updated successfully' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error updating product::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to update product', detail: (error as any)?.message });
-    }
+    console.error('Error updating product::', error?.message || error);
+    res.status(500).json({ error: 'Failed to update product', detail: (error as any)?.message });
   }
 });
 
@@ -267,11 +261,8 @@ app.get('/api/products/:id', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching product::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch product', detail: (error as any)?.message });
-    }
+    console.error('Error fetching product::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch product', detail: (error as any)?.message });
   }
 });
 
@@ -314,11 +305,8 @@ app.get('/api/products/search/:query', async (req, res) => {
 
     res.json({ products: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching products::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch products', detail: (error as any)?.message });
-    }
+    console.error('Error searching products::', error?.message || error);
+    res.status(500).json({ error: 'Failed to search products', detail: (error as any)?.message });
   }
 });
 
@@ -362,11 +350,8 @@ app.get('/api/sellers/top', async (req, res) => {
 
     res.json({ sellers: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching top sellers::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch top sellers', detail: (error as any)?.message });
-    }
+    console.error('Error fetching top sellers::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch top sellers', detail: (error as any)?.message });
   }
 });
 
@@ -382,11 +367,8 @@ app.get('/api/sellers/:address', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching sellers::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch sellers', detail: (error as any)?.message });
-    }
+    console.error('Error fetching seller::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch seller', detail: (error as any)?.message });
   }
 });
 
@@ -411,11 +393,8 @@ app.get('/api/products/:id/reviews', async (req, res) => {
 
     res.json({ reviews: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching reviews::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch reviews', detail: (error as any)?.message });
-    }
+    console.error('Error fetching reviews::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch reviews', detail: (error as any)?.message });
   }
 });
 
@@ -436,11 +415,8 @@ app.get('/api/stats', async (req, res) => {
 
     res.json(stats.rows[0]);
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching stats::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch stats', detail: (error as any)?.message });
-    }
+    console.error('Error fetching stats::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch stats', detail: (error as any)?.message });
   }
 });
 
@@ -463,11 +439,8 @@ app.get('/api/products/trending', async (req, res) => {
 
     res.json({ products: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching trending products::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch trending products', detail: (error as any)?.message });
-    }
+    console.error('Error fetching trending products::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch trending products', detail: (error as any)?.message });
   }
 });
 
@@ -486,11 +459,8 @@ app.get('/api/categories', async (req, res) => {
 
     res.json({ categories: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching categories::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch categories', detail: (error as any)?.message });
-    }
+    console.error('Error fetching categories::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch categories', detail: (error as any)?.message });
   }
 });
 
@@ -511,11 +481,8 @@ app.get('/api/purchases/:address', async (req, res) => {
 
     res.json({ purchases: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching purchases::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch purchases', detail: (error as any)?.message });
-    }
+    console.error('Error fetching purchases::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch purchases', detail: (error as any)?.message });
   }
 });
 
@@ -549,11 +516,8 @@ app.post('/api/sellers/:address/follow', async (req, res) => {
 
     res.json({ success: true, message: 'Followed successfully' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error follow sellers::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to follow', detail: (error as any)?.message });
-    }
+    console.error('Error following seller::', error?.message || error);
+    res.status(500).json({ error: 'Failed to follow seller', detail: (error as any)?.message });
   }
 });
 
@@ -584,11 +548,8 @@ app.delete('/api/sellers/:address/follow', async (req, res) => {
 
     res.json({ success: true, message: 'Unfollowed successfully' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error unfollow sellers::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to unfollow sellers', detail: (error as any)?.message });
-    }
+    console.error('Error unfollowing seller::', error?.message || error);
+    res.status(500).json({ error: 'Failed to unfollow seller', detail: (error as any)?.message });
   }
 });
 
@@ -607,11 +568,8 @@ app.get('/api/sellers/:address/following/:userAddress', async (req, res) => {
 
     res.json({ isFollowing: result.rows[0].is_following });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error checking follow status::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to chck follow status', detail: (error as any)?.message });
-    }
+    console.error('Error checking follow status::', error?.message || error);
+    res.status(500).json({ error: 'Failed to check follow status', detail: (error as any)?.message });
   }
 });
 
@@ -631,11 +589,8 @@ app.get('/api/users/:address/following', async (req, res) => {
 
     res.json({ following: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching following::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch following', detail: (error as any)?.message });
-    }
+    console.error('Error fetching following::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch following', detail: (error as any)?.message });
   }
 });
 
@@ -659,11 +614,8 @@ app.post('/api/favorites', async (req, res) => {
 
     res.json({ success: true, message: 'Added to favorites' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error adding favorites::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to add favorites', detail: (error as any)?.message });
-    }
+    console.error('Error adding to favorites::', error?.message || error);
+    res.status(500).json({ error: 'Failed to add to favorites', detail: (error as any)?.message });
   }
 });
 
@@ -687,11 +639,8 @@ app.delete('/api/favorites', async (req, res) => {
 
     res.json({ success: true, message: 'Removed from favorites' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error removing from favorites::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to remove from favorites', detail: (error as any)?.message });
-    }
+    console.error('Error removing from favorites::', error?.message || error);
+    res.status(500).json({ error: 'Failed to remove from favorites', detail: (error as any)?.message });
   }
 });
 
@@ -724,11 +673,8 @@ app.get('/api/users/:address/favorites', async (req, res) => {
 
     res.json({ favorites: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching favorites::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
-    }
+    console.error('Error fetching favorites::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
   }
 });
 
@@ -747,11 +693,8 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
 
     res.json({ isFavorited: result.rows[0].is_favorited });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error checking favorite status::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to check favorite status', detail: (error as any)?.message });
-    }
+    console.error('Error checking favorite status::', error?.message || error);
+    res.status(500).json({ error: 'Failed to check favorite status', detail: (error as any)?.message });
   }
 });
 
@@ -931,11 +874,8 @@ app.put('/api/products/:id', async (req, res) => {
 
     res.json({ success: true, message: 'Product updated successfully' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error updating product::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to updating products', detail: (error as any)?.message });
-    }
+    console.error('Error updating product::', error?.message || error);
+    res.status(500).json({ error: 'Failed to update product', detail: (error as any)?.message });
   }
 });
 
@@ -969,11 +909,8 @@ app.delete('/api/products/:id', async (req, res) => {
 
     res.json({ success: true, message: 'Product deleted successfully' });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error deleting product::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to delete product', detail: (error as any)?.message });
-    }
+    console.error('Error deleting product::', error?.message || error);
+    res.status(500).json({ error: 'Failed to delete product', detail: (error as any)?.message });
   }
 });
 
@@ -1037,11 +974,8 @@ app.get('/api/sellers/:address/analytics', async (req, res) => {
       recentSales: recentSales.rows,
     });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching analytics::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch analytics', detail: (error as any)?.message });
-    }
+    console.error('Error fetching analytics::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch analytics', detail: (error as any)?.message });
   }
 });
 
@@ -1060,11 +994,8 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
 
     res.json({ followers: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching followers::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch followers', detail: (error as any)?.message });
-    }
+    console.error('Error fetching followers::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch followers', detail: (error as any)?.message });
   }
 });
 
@@ -1299,26 +1230,58 @@ app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Reques
 
     // ✅ VALIDATE FILE TYPE
     const allowedTypes = [
+      // Documents
       'application/pdf',
+      // Archives
       'application/zip',
       'application/x-zip-compressed',
+      'application/x-rar-compressed',
+      'application/x-7z-compressed',
+      // Images
       'image/jpeg',
       'image/png',
       'image/webp',
+      'image/gif',
+      'image/svg+xml',
+      // Video
+      'video/mp4',
+      'video/avi',
+      'video/x-msvideo',
+      'video/quicktime',
+      'video/x-matroska',
+      'video/webm',
+      'video/x-ms-wmv',
+      'video/mpeg',
+      // Audio
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/ogg',
+      'audio/flac',
+      'audio/x-flac',
+      // Text / Code
       'text/plain',
+      'text/html',
+      'text/css',
+      'application/json',
+      'application/javascript',
     ];
 
     if (!allowedTypes.includes(req.file.mimetype)) {
       return res.status(400).json({ 
         error: 'File type not allowed',
-        allowedTypes: 'PDF, ZIP, JPG, PNG, WEBP, TXT'
+        allowedTypes: 'PDF, ZIP, RAR, 7Z, JPG, PNG, WEBP, GIF, SVG, MP4, AVI, MOV, MKV, WEBM, WMV, MP3, WAV, OGG, FLAC, TXT, HTML, CSS, JSON, JS',
+        received: req.file.mimetype,
       });
     }
 
-    // ✅ VALIDATE FILE SIZE (100MB)
-    const MAX_SIZE = 100 * 1024 * 1024;
+    // ✅ VALIDATE FILE SIZE — 500MB for video, 100MB for everything else
+    const isVideo = req.file.mimetype.startsWith('video/');
+    const MAX_SIZE = isVideo ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
     if (req.file.size > MAX_SIZE) {
-      return res.status(400).json({ error: 'File size exceeds 100MB limit' });
+      return res.status(400).json({ 
+        error: `File size exceeds limit. Max: ${isVideo ? '500MB for video' : '100MB'}`,
+      });
     }
 
     console.log(`📤 Uploading file: ${req.file.originalname}`);
@@ -1443,11 +1406,8 @@ app.get('/api/resale-listings/user/:userAddress/:productId', async (req, res) =>
 
     res.json({ listing: result.rows[0] });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error checking user listing::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to check user listing', detail: (error as any)?.message });
-    }
+    console.error('Error checking user listing::', error?.message || error);
+    res.status(500).json({ error: 'Failed to check user listing', detail: (error as any)?.message });
   }
 });
 
@@ -1477,11 +1437,8 @@ app.get('/api/resale-listings', async (req, res) => {
 
     res.json({ listings: result.rows });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching resale listings::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch resale listing', detail: (error as any)?.message });
-    }
+    console.error('Error fetching resale listings::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch resale listings', detail: (error as any)?.message });
   }
 });
 
@@ -1503,13 +1460,13 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
 
     res.json({ tokenId: result.rows[0].token_id });
   } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error fetching ownership token::', error?.message || error);
-    }else{
-      res.status(500).json({ error: 'Failed to fetch ownership token', detail: (error as any)?.message });
-    }
+    console.error('Error fetching ownership token::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch ownership token', detail: (error as any)?.message });
   }
 });
+
+// ==================== Start Server ====================
+
 
 // ==================== Support Endpoints ====================
 
@@ -1596,9 +1553,6 @@ app.patch('/api/support/disputes/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to update dispute', detail: error?.message });
   }
 });
-
-
-// ==================== Start Server ====================
 
 // Bind to 0.0.0.0 so Railway (and any cloud host) can route traffic to the container
 // localhost/127.0.0.1 only accepts connections from inside the container — Railway needs 0.0.0.0

@@ -1,3 +1,7 @@
+// Tawk.to live chat widget
+// Set NEXT_PUBLIC_TAWK_PROPERTY_ID and NEXT_PUBLIC_TAWK_WIDGET_ID in Vercel
+// Get these from tawk.to dashboard → Administration → Chat Widget
+
 import { useEffect } from 'react';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 

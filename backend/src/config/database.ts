@@ -7,16 +7,22 @@ dotenv.config();
 // Reads DATABASE_URL on Railway, falls back to local Docker credentials
 function createPool(): Pool {
   const databaseUrl = process.env.DATABASE_URL;
-
-  if (!databaseUrl) {
-    throw new Error("❌ DATABASE_URL is NOT set");
+  if (databaseUrl) {
+    console.log(`DB URL USED: ${databaseUrl}`);
+    return new Pool({
+      connectionString: databaseUrl,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    });
   }
-
-  console.log(`DB URL USED: ${databaseUrl}`);
-
   return new Pool({
-    connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: false },
+    host:     process.env.PGHOST     || '127.0.0.1',
+    port:     Number(process.env.PGPORT) || 5432,
+    user:     process.env.PGUSER     || 'suishop',
+    password: process.env.PGPASSWORD || 'suishop_password_2026',
+    database: process.env.PGDATABASE || 'suishop',
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
@@ -27,10 +33,7 @@ export const pool = createPool();
 // Initialize database tables
 export async function initializeDatabase() {
   try {
-    console.log('🔄 Initializing database schemas...');
-    console.log("ENV CHECK:", {
-  DATABASE_URL: !!process.env.DATABASE_URL,
-});
+    console.log('🔄 Initializing database schema...');
 
     await pool.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
@@ -176,44 +179,6 @@ export async function initializeDatabase() {
       )
     `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS support_messages (
-        id           SERIAL PRIMARY KEY,
-        name         TEXT DEFAULT '',
-        email        TEXT NOT NULL,
-        subject      TEXT DEFAULT 'Support Request',
-        message      TEXT NOT NULL,
-        wallet_address TEXT,
-        status       TEXT DEFAULT 'open',
-        created_at   BIGINT NOT NULL DEFAULT 0
-      )
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS disputes (
-        id             SERIAL PRIMARY KEY,
-        tx_digest      TEXT UNIQUE NOT NULL,
-        buyer_address  TEXT NOT NULL,
-        reason         TEXT NOT NULL,
-        description    TEXT NOT NULL,
-        status         TEXT DEFAULT 'open',
-        resolution     TEXT,
-        created_at     BIGINT NOT NULL DEFAULT 0,
-        updated_at     BIGINT NOT NULL DEFAULT 0
-      )
-    `);
-    
-    // Indexes for support and dispute
-    try {
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_disputes_buyer   ON disputes(buyer_address);
-        CREATE INDEX IF NOT EXISTS idx_disputes_status  ON disputes(status);
-        CREATE INDEX IF NOT EXISTS idx_support_email    ON support_messages(email);
-        CREATE INDEX IF NOT EXISTS idx_support_status   ON support_messages(status);
-      `);
-    } catch (e: any) { console.warn('Support index warning:', e.message); }
-
-
     // Indexes — wrapped in try/catch since they may already exist with different definitions
     try { await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller               ON products(seller);
@@ -240,6 +205,43 @@ export async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_resale_listings_active        ON resale_listings(is_active);
       CREATE INDEX IF NOT EXISTS idx_resale_listings_product       ON resale_listings(original_product_id);
     `); } catch(idxErr: any) { console.warn('Index warning (safe):', idxErr.message); }
+
+    // Support tables
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS support_messages (
+        id           SERIAL PRIMARY KEY,
+        name         TEXT DEFAULT '',
+        email        TEXT NOT NULL,
+        subject      TEXT DEFAULT 'Support Request',
+        message      TEXT NOT NULL,
+        wallet_address TEXT,
+        status       TEXT DEFAULT 'open',
+        created_at   BIGINT NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS disputes (
+        id             SERIAL PRIMARY KEY,
+        tx_digest      TEXT UNIQUE NOT NULL,
+        buyer_address  TEXT NOT NULL,
+        reason         TEXT NOT NULL,
+        description    TEXT NOT NULL,
+        status         TEXT DEFAULT 'open',
+        resolution     TEXT,
+        created_at     BIGINT NOT NULL DEFAULT 0,
+        updated_at     BIGINT NOT NULL DEFAULT 0
+      )
+    `);
+
+    try {
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_disputes_buyer   ON disputes(buyer_address);
+        CREATE INDEX IF NOT EXISTS idx_disputes_status  ON disputes(status);
+        CREATE INDEX IF NOT EXISTS idx_support_email    ON support_messages(email);
+        CREATE INDEX IF NOT EXISTS idx_support_status   ON support_messages(status);
+      `);
+    } catch (e: any) { console.warn('Support index warning:', e.message); }
 
     console.log('✅ Database schema initialized successfully');
   } catch (error) {

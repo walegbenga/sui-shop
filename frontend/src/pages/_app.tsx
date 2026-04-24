@@ -10,6 +10,8 @@ import { CartProvider } from '@/contexts/CartContext';
 import Layout from '@/components/Layout';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import OnboardingModal from '@/components/OnboardingModal';
+import SellerOnboarding from '@/components/SellerOnboarding';
+import TawkChat from '@/components/TawkChat';
 import '@mysten/dapp-kit/dist/index.css';
 
 const queryClient = new QueryClient();
@@ -70,6 +72,8 @@ export default function App({ Component, pageProps }: AppProps) {
             <WalletProvider autoConnect>
               <CartProvider>
                 <OnboardingModal />
+                <SellerOnboarding />
+                <TawkChat />
                 <Layout>
                   <Component {...pageProps} />
                 </Layout>
