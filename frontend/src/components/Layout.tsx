@@ -33,13 +33,10 @@ export default function Layout({ children }: LayoutProps) {
 
   const navLinks = [
     { href: '/', label: 'Marketplace', requireAuth: false },
-    { href: '/my-products', label: 'My Products', requireAuth: true },
     { href: '/analytics', label: 'Analytics', requireAuth: true },
     { href: '/favorites', label: 'Favorites', requireAuth: true },
     { href: '/followers', label: 'Followers', requireAuth: true },
     { href: '/following', label: 'Following', requireAuth: true },
-    { href: '/my-purchases', label: 'my-purchases', requireAuth: true },
-    { href: '/profile', label: 'Profile', requireAuth: true },
   ];
 
   // ✅ Add auto-logout
