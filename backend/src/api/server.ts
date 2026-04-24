@@ -1511,6 +1511,93 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
   }
 });
 
+// ==================== Support Endpoints ====================
+
+// POST /api/support/contact — stores message and emails admin
+app.post('/api/support/contact', async (req, res) => {
+  try {
+    const { name, email, subject, message, wallet } = req.body;
+    if (!email || !message) return res.status(400).json({ error: 'Email and message required' });
+
+    await pool.query(
+      `INSERT INTO support_messages (name, email, subject, message, wallet_address, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [name || 'Anonymous', email, subject || 'Support Request', message,
+       wallet || null, Date.now()]
+    );
+
+    console.log(`📧 Support message from ${email}: ${subject}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Support contact error:', error?.message);
+    res.status(500).json({ error: 'Failed to send message', detail: error?.message });
+  }
+});
+
+// POST /api/support/dispute
+app.post('/api/support/dispute', async (req, res) => {
+  try {
+    const { tx_digest, reason, description, wallet } = req.body;
+    if (!tx_digest || !reason || !description || !wallet)
+      return res.status(400).json({ error: 'All fields required' });
+
+    // Verify purchase exists
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE tx_digest = $1 AND buyer = $2',
+      [tx_digest, wallet]
+    );
+
+    await pool.query(
+      `INSERT INTO disputes (tx_digest, buyer_address, reason, description, status, created_at)
+       VALUES ($1,$2,$3,$4,'open',$5)
+       ON CONFLICT (tx_digest) DO UPDATE SET
+         reason      = EXCLUDED.reason,
+         description = EXCLUDED.description,
+         updated_at  = $5`,
+      [tx_digest, wallet, reason, description, Date.now()]
+    );
+
+    console.log(`⚖️  Dispute filed by ${wallet} for tx ${tx_digest}`);
+    res.json({ success: true, purchase_found: purchase.rows.length > 0 });
+  } catch (error: any) {
+    console.error('Dispute error:', error?.message);
+    res.status(500).json({ error: 'Failed to submit dispute', detail: error?.message });
+  }
+});
+
+// GET /api/support/disputes — admin only (basic key check)
+app.get('/api/support/disputes', async (req, res) => {
+  try {
+    const adminKey = req.headers['x-admin-key'];
+    if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+    const result = await pool.query(
+      'SELECT * FROM disputes ORDER BY created_at DESC LIMIT 100'
+    );
+    res.json({ disputes: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch disputes', detail: error?.message });
+  }
+});
+
+// PATCH /api/support/disputes/:id — update dispute status (admin)
+app.patch('/api/support/disputes/:id', async (req, res) => {
+  try {
+    const adminKey = req.headers['x-admin-key'];
+    if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { status, resolution } = req.body;
+    await pool.query(
+      `UPDATE disputes SET status = $1, resolution = $2, updated_at = $3 WHERE id = $4`,
+      [status, resolution || null, Date.now(), req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update dispute', detail: error?.message });
+  }
+});
+
+
 // ==================== Start Server ====================
 
 // Bind to 0.0.0.0 so Railway (and any cloud host) can route traffic to the container

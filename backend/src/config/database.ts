@@ -176,6 +176,44 @@ export async function initializeDatabase() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS support_messages (
+        id           SERIAL PRIMARY KEY,
+        name         TEXT DEFAULT '',
+        email        TEXT NOT NULL,
+        subject      TEXT DEFAULT 'Support Request',
+        message      TEXT NOT NULL,
+        wallet_address TEXT,
+        status       TEXT DEFAULT 'open',
+        created_at   BIGINT NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS disputes (
+        id             SERIAL PRIMARY KEY,
+        tx_digest      TEXT UNIQUE NOT NULL,
+        buyer_address  TEXT NOT NULL,
+        reason         TEXT NOT NULL,
+        description    TEXT NOT NULL,
+        status         TEXT DEFAULT 'open',
+        resolution     TEXT,
+        created_at     BIGINT NOT NULL DEFAULT 0,
+        updated_at     BIGINT NOT NULL DEFAULT 0
+      )
+    `);
+    
+    // Indexes for support and dispute
+    try {
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_disputes_buyer   ON disputes(buyer_address);
+        CREATE INDEX IF NOT EXISTS idx_disputes_status  ON disputes(status);
+        CREATE INDEX IF NOT EXISTS idx_support_email    ON support_messages(email);
+        CREATE INDEX IF NOT EXISTS idx_support_status   ON support_messages(status);
+      `);
+    } catch (e: any) { console.warn('Support index warning:', e.message); }
+
+
     // Indexes — wrapped in try/catch since they may already exist with different definitions
     try { await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller               ON products(seller);
