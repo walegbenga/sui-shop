@@ -9,7 +9,6 @@ import { Toaster } from 'react-hot-toast';
 import { CartProvider } from '@/contexts/CartContext';
 import Layout from '@/components/Layout';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import OnboardingModal from '@/components/OnboardingModal';
 import '@mysten/dapp-kit/dist/index.css';
 
 const queryClient = new QueryClient();
@@ -32,12 +31,6 @@ function RegisterEnokiWallets() {
         google: {
           clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
         },
-        // Facebook: add NEXT_PUBLIC_FACEBOOK_CLIENT_ID to Vercel env vars to enable
-        ...(process.env.NEXT_PUBLIC_FACEBOOK_CLIENT_ID ? {
-          facebook: {
-            clientId: process.env.NEXT_PUBLIC_FACEBOOK_CLIENT_ID!,
-          },
-        } : {}),
       },
       client,
       network,
@@ -69,7 +62,6 @@ export default function App({ Component, pageProps }: AppProps) {
             <RegisterEnokiWallets />
             <WalletProvider autoConnect>
               <CartProvider>
-                <OnboardingModal />
                 <Layout>
                   <Component {...pageProps} />
                 </Layout>
