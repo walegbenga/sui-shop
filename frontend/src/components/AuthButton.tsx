@@ -25,7 +25,7 @@ export default function AuthButton() {
   );
   const googleWallet   = walletsByProvider.get('google');
   const facebookWallet = walletsByProvider.get('facebook');
-  const twitterWallet  = walletsByProvider.get('twitter');
+  //const twitterWallet  = walletsByProvider.get('twitter');
 
   const isEnokiAccount = !!account &&
     enokiWallets.some(w => w.accounts.some(a => a.address === account.address));
