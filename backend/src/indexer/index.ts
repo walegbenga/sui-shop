@@ -15,6 +15,7 @@ console.log('✅ Sui Client connected to testnet');
 console.log(`📦 Package ID: ${PACKAGE_ID}`);
 console.log(`🏪 Marketplace ID: ${MARKETPLACE_ID}`);
 
+
 // ── Cursor helpers ────────────────────────────────────────────────────────────
 
 async function getSavedCursor(): Promise<any | null> {
