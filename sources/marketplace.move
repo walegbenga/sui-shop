@@ -27,15 +27,6 @@ module sui_commerce::marketplace {
     const ENotTokenOwner: u64 = 11;
     const EAlreadyListedForResale: u64 = 12;
     const ENotListedForResale: u64 = 13;
-    
-    // License errors
-    const ELicenseExpired: u64 = 14;
-    const ELicenseRevoked: u64 = 15;
-    const EMaxActivationsReached: u64 = 16;
-    const EDeviceAlreadyActivated: u64 = 17;
-    const EDeviceNotActivated: u64 = 18;
-    const ELicenseNotExpired: u64 = 19;
-    const ENotLicenseOwner: u64 = 20;
 
     // ======== Constants ========
     const PLATFORM_FEE_BPS: u64 = 200;
@@ -45,17 +36,6 @@ module sui_commerce::marketplace {
     const MAX_RATING: u8 = 5;
     const MAX_DESCRIPTION_LENGTH: u64 = 1000;
     const MAX_REVIEW_LENGTH: u64 = 500;
-
-    // License types
-    const LICENSE_TYPE_NONE: u8 = 0;       // No license (free download)
-    const LICENSE_TYPE_SINGLE: u8 = 1;     // Single device
-    const LICENSE_TYPE_MULTI: u8 = 2;      // Multiple devices (seller sets count)
-    const LICENSE_TYPE_UNLIMITED: u8 = 3;  // Unlimited activations
-
-    // License status
-    const LICENSE_STATUS_ACTIVE: u8 = 0;
-    const LICENSE_STATUS_EXPIRED: u8 = 1;
-    const LICENSE_STATUS_REVOKED: u8 = 2;
 
     // ======== Core Structs ========
 
@@ -97,6 +77,11 @@ module sui_commerce::marketplace {
         total_rating_sum: u64,
         resellable: bool,
         file_cid: String,
+        // License fields (feature branch only)
+        license_type: u8,
+        license_max_activations: u64,
+        license_duration_days: u64,
+        license_renewal_price: u64,
     }
 
     public struct Review has store, drop {
@@ -151,25 +136,6 @@ module sui_commerce::marketplace {
         original_product_id: ID,
         original_seller: address,
         listed_at: u64,
-    }
-
-    // ======== License Structs ========
-
-    /// SoftwareLicense — minted to buyer when purchasing a licensed product
-    public struct SoftwareLicense has key, store {
-        id: UID,
-        product_id: ID,
-        owner: address,
-        seller: address,                    // original seller (for renewals)
-        license_type: u8,
-        max_activations: u64,               // 0 = unlimited
-        current_activations: u64,
-        activated_devices: vector<String>,  // hashed device IDs
-        issue_timestamp: u64,
-        expiry_timestamp: u64,              // 0 = lifetime (no expiry)
-        renewal_price: u64,                 // price to renew in MIST (0 = not renewable)
-        status: u8,                         // 0=active, 1=expired, 2=revoked
-        renewal_count: u64,                 // how many times renewed
     }
 
     // ======== Events ========
@@ -229,47 +195,6 @@ module sui_commerce::marketplace {
         timestamp: u64,
     }
 
-    public struct LicenseIssued has copy, drop {
-        license_id: ID,
-        product_id: ID,
-        buyer: address,
-        license_type: u8,
-        max_activations: u64,
-        expiry_timestamp: u64,
-        timestamp: u64,
-    }
-
-    public struct LicenseActivated has copy, drop {
-        license_id: ID,
-        owner: address,
-        device_id: String,
-        activations_used: u64,
-        timestamp: u64,
-    }
-
-    public struct LicenseDeactivated has copy, drop {
-        license_id: ID,
-        owner: address,
-        device_id: String,
-        activations_used: u64,
-        timestamp: u64,
-    }
-
-    public struct LicenseRenewed has copy, drop {
-        license_id: ID,
-        owner: address,
-        new_expiry: u64,
-        renewal_count: u64,
-        timestamp: u64,
-    }
-
-    public struct LicenseRevoked has copy, drop {
-        license_id: ID,
-        product_id: ID,
-        owner: address,
-        timestamp: u64,
-    }
-
     // ======== Initialization ========
 
     fun init(_witness: MARKETPLACE, ctx: &mut TxContext) {
@@ -319,6 +244,10 @@ module sui_commerce::marketplace {
         category: vector<u8>,
         resellable: bool,
         file_cid: vector<u8>,
+        license_type: u8,
+        license_max_activations: u64,
+        license_duration_days: u64,
+        license_renewal_price: u64,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
@@ -345,6 +274,10 @@ module sui_commerce::marketplace {
             total_rating_sum: 0,
             resellable,
             file_cid: string::utf8(file_cid),
+            license_type,
+            license_max_activations,
+            license_duration_days,
+            license_renewal_price,
         };
 
         platform.total_products = platform.total_products + 1;
@@ -423,7 +356,9 @@ module sui_commerce::marketplace {
         };
 
         let buyer = tx_context::sender(ctx);
-        //let now = clock::timestamp_ms(clock);
+
+        // Timestamp used for license minting
+        let now = clock::timestamp_ms(clock);
 
         // Issue ownership token for resellable products
         if (product.resellable) {
@@ -440,48 +375,6 @@ module sui_commerce::marketplace {
                 file_cid: product.file_cid,
             };
             transfer::transfer(token, buyer);
-        };
-
-        // Issue software license if product requires one
-        if (product.license_type != LICENSE_TYPE_NONE) {
-            // Calculate expiry: 0 = lifetime, else now + duration_days in ms
-            let expiry_timestamp = if (product.license_duration_days == 0) {
-                0 // lifetime
-            } else {
-                now + (product.license_duration_days * 24 * 60 * 60 * 1000)
-            };
-
-            let license_id = object::new(ctx);
-            let license_id_copy = object::uid_to_inner(&license_id);
-            let product_id_inner = object::uid_to_inner(&product.id);
-
-            let license = SoftwareLicense {
-                id: license_id,
-                product_id: product_id_inner,
-                owner: buyer,
-                seller: product.seller,
-                license_type: product.license_type,
-                max_activations: product.license_max_activations,
-                current_activations: 0,
-                activated_devices: vector::empty<String>(),
-                issue_timestamp: now,
-                expiry_timestamp,
-                renewal_price: product.license_renewal_price,
-                status: LICENSE_STATUS_ACTIVE,
-                renewal_count: 0,
-            };
-
-            event::emit(LicenseIssued {
-                license_id: license_id_copy,
-                product_id: product_id_inner,
-                buyer,
-                license_type: product.license_type,
-                max_activations: product.license_max_activations,
-                expiry_timestamp,
-                timestamp: now,
-            });
-
-            transfer::transfer(license, buyer);
         };
 
         let receipt = PurchaseReceipt {
@@ -506,179 +399,6 @@ module sui_commerce::marketplace {
         });
 
         transfer::transfer(receipt, buyer);
-    }
-
-
-    / ======== License Functions ========
-
-    /// Activate a license on a device
-    /// device_id should be a hash of hardware identifiers from the client software
-    public entry fun activate_license(
-        license: &mut SoftwareLicense,
-        device_id: vector<u8>,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        let caller = tx_context::sender(ctx);
-        assert!(license.owner == caller, ENotLicenseOwner);
-        assert!(license.status == LICENSE_STATUS_ACTIVE, ELicenseRevoked);
-
-        let now = clock::timestamp_ms(clock);
-
-        // Check expiry (0 = lifetime)
-        if (license.expiry_timestamp > 0) {
-            assert!(now < license.expiry_timestamp, ELicenseExpired);
-        };
-
-        let device_str = string::utf8(device_id);
-
-        // Check device not already activated
-        let len = vector::length(&license.activated_devices);
-        let mut i = 0;
-        while (i < len) {
-            assert!(*vector::borrow(&license.activated_devices, i) != device_str, EDeviceAlreadyActivated);
-            i = i + 1;
-        };
-
-        // Check max activations (0 = unlimited)
-        if (license.max_activations > 0) {
-            assert!(license.current_activations < license.max_activations, EMaxActivationsReached);
-        };
-
-        vector::push_back(&mut license.activated_devices, device_str);
-        license.current_activations = license.current_activations + 1;
-
-        event::emit(LicenseActivated {
-            license_id: object::uid_to_inner(&license.id),
-            owner: caller,
-            device_id: device_str,
-            activations_used: license.current_activations,
-            timestamp: now,
-        });
-    }
-
-    /// Deactivate a license on a device (frees up an activation slot)
-    public entry fun deactivate_license(
-        license: &mut SoftwareLicense,
-        device_id: vector<u8>,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        let caller = tx_context::sender(ctx);
-        assert!(license.owner == caller, ENotLicenseOwner);
-
-        let device_str = string::utf8(device_id);
-        let len = vector::length(&license.activated_devices);
-        let mut found = false;
-        let mut idx = 0;
-        let mut i = 0;
-
-        while (i < len) {
-            if (*vector::borrow(&license.activated_devices, i) == device_str) {
-                found = true;
-                idx = i;
-            };
-            i = i + 1;
-        };
-
-        assert!(found, EDeviceNotActivated);
-
-        vector::remove(&mut license.activated_devices, idx);
-        license.current_activations = license.current_activations - 1;
-
-        event::emit(LicenseDeactivated {
-            license_id: object::uid_to_inner(&license.id),
-            owner: caller,
-            device_id: device_str,
-            activations_used: license.current_activations,
-            timestamp: clock::timestamp_ms(clock),
-        });
-    }
-
-    /// Renew an expired (or about-to-expire) license
-    /// Buyer pays renewal_price to the seller, license expiry extends by original duration
-    public entry fun renew_license(
-        platform: &mut Platform,
-        license: &mut SoftwareLicense,
-        product: &Product,
-        payment: Coin<SUI>,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        let caller = tx_context::sender(ctx);
-        assert!(license.owner == caller, ENotLicenseOwner);
-        assert!(license.status != LICENSE_STATUS_REVOKED, ELicenseRevoked);
-        assert!(license.renewal_price > 0, EInvalidPrice); // must be renewable
-        assert!(coin::value(&payment) == license.renewal_price, EInsufficientPayment);
-
-        // License must be expired OR within 30 days of expiry to renew
-        let now = clock::timestamp_ms(clock);
-        if (license.expiry_timestamp > 0) {
-            let thirty_days_ms: u64 = 30 * 24 * 60 * 60 * 1000;
-            let can_renew = now >= license.expiry_timestamp ||
-                            (license.expiry_timestamp - now) <= thirty_days_ms;
-            assert!(can_renew, ELicenseNotExpired);
-        };
-
-        // Split payment: platform fee + rest to seller
-        let platform_fee = calculate_fee(license.renewal_price, platform.platform_fee_bps);
-        let mut payment_balance = coin::into_balance(payment);
-        let fee_balance = balance::split(&mut payment_balance, platform_fee);
-        balance::join(&mut platform.treasury, fee_balance);
-        platform.total_sales = platform.total_sales + 1;
-
-        let seller_coin = coin::from_balance(payment_balance, ctx);
-        transfer::public_transfer(seller_coin, license.seller);
-
-        // Extend expiry — use product's original duration
-        let new_expiry = if (product.license_duration_days == 0) {
-            0 // becomes lifetime on renewal
-        } else {
-            let duration_ms = product.license_duration_days * 24 * 60 * 60 * 1000;
-            if (now >= license.expiry_timestamp) {
-                // Already expired — renew from now
-                now + duration_ms
-            } else {
-                // Not yet expired — extend from current expiry
-                license.expiry_timestamp + duration_ms
-            }
-        };
-
-        license.expiry_timestamp = new_expiry;
-        license.status = LICENSE_STATUS_ACTIVE;
-        license.renewal_count = license.renewal_count + 1;
-
-        event::emit(LicenseRenewed {
-            license_id: object::uid_to_inner(&license.id),
-            owner: caller,
-            new_expiry,
-            renewal_count: license.renewal_count,
-            timestamp: now,
-        });
-    }
-
-    /// Admin or seller can revoke a license
-    public entry fun revoke_license(
-        platform: &Platform,
-        license: &mut SoftwareLicense,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        let caller = tx_context::sender(ctx);
-        // Only platform admin or the original seller can revoke
-        assert!(
-            caller == platform.admin || caller == license.seller,
-            EUnauthorized
-        );
-
-        license.status = LICENSE_STATUS_REVOKED;
-
-        event::emit(LicenseRevoked {
-            license_id: object::uid_to_inner(&license.id),
-            product_id: license.product_id,
-            owner: license.owner,
-            timestamp: clock::timestamp_ms(clock),
-        });
     }
 
     // ======== Resale Functions ========
@@ -971,21 +691,6 @@ module sui_commerce::marketplace {
 
     public fun get_token_details(token: &OwnershipToken): (ID, address, address, u64, bool, u64) {
         (token.original_product_id, token.current_owner, token.original_seller, token.purchase_price, token.is_listed_for_resale, token.resale_price)
-    }
-
-    public fun get_product_license_config(product: &Product): (u8, u64, u64, u64) {
-        (product.license_type, product.license_max_activations, product.license_duration_days, product.license_renewal_price)
-    }
-
-    public fun get_license_details(license: &SoftwareLicense): (u8, u64, u64, u64, u64, u8) {
-        (license.license_type, license.max_activations, license.current_activations,
-         license.expiry_timestamp, license.renewal_price, license.status)
-    }
-
-    public fun is_license_valid(license: &SoftwareLicense, clock: &Clock): bool {
-        if (license.status != LICENSE_STATUS_ACTIVE) { return false };
-        if (license.expiry_timestamp == 0) { return true };
-        clock::timestamp_ms(clock) < license.expiry_timestamp
     }
 
     // ======== Test Functions ========
