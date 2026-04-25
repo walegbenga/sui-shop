@@ -1468,6 +1468,238 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
 // ==================== Start Server ====================
 
 
+
+// ==================== Admin Endpoints ====================
+// All protected by x-admin-key header matching ADMIN_KEY env var
+
+const requireAdmin = (req: any, res: any, next: any) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
+// GET /api/admin/overview — platform-wide stats
+app.get('/api/admin/overview', requireAdmin, async (req: any, res: any) => {
+  try {
+    const [stats, revenueRow, recentRow, topSellers] = await Promise.all([
+      pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM products)                          AS total_products,
+          (SELECT COUNT(*) FROM products WHERE is_available=true)  AS active_products,
+          (SELECT COUNT(*) FROM sellers)                           AS total_sellers,
+          (SELECT COUNT(*) FROM purchases)                         AS total_purchases,
+          (SELECT COALESCE(SUM(price),0) FROM purchases)           AS total_volume,
+          (SELECT COUNT(*) FROM disputes)                          AS total_disputes,
+          (SELECT COUNT(*) FROM disputes WHERE status='open')      AS open_disputes,
+          (SELECT COUNT(*) FROM support_messages)                  AS total_messages,
+          (SELECT COUNT(*) FROM support_messages WHERE status='open') AS open_messages,
+          (SELECT COUNT(*) FROM reviews)                           AS total_reviews
+      `),
+      pool.query(`
+        SELECT
+          TO_CHAR(TO_TIMESTAMP(created_at/1000),'YYYY-MM') AS month,
+          COUNT(*)                                           AS sales,
+          COALESCE(SUM(price),0)                            AS revenue
+        FROM purchases
+        GROUP BY month ORDER BY month DESC LIMIT 6
+      `),
+      pool.query(`
+        SELECT p.id, p.title, p.price, pu.buyer, pu.created_at
+        FROM purchases pu
+        JOIN products p ON p.id = pu.product_id
+        ORDER BY pu.created_at DESC LIMIT 10
+      `),
+      pool.query(`
+        SELECT s.address, s.display_name, s.total_sales, s.total_revenue, s.is_banned,
+               COUNT(p.id) AS product_count
+        FROM sellers s
+        LEFT JOIN products p ON p.seller = s.address
+        GROUP BY s.address ORDER BY s.total_revenue DESC LIMIT 10
+      `),
+    ]);
+
+    res.json({
+      stats:       stats.rows[0],
+      revenue:     revenueRow.rows,
+      recentSales: recentRow.rows,
+      topSellers:  topSellers.rows,
+    });
+  } catch (error: any) {
+    console.error('Admin overview error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch admin overview', detail: error.message });
+  }
+});
+
+// GET /api/admin/sellers — list all sellers with details
+app.get('/api/admin/sellers', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { page = 1, limit = 20, search = '' } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    const whereClause = search
+      ? `WHERE s.address ILIKE $3 OR s.display_name ILIKE $3`
+      : '';
+    const params: any[] = [Number(limit), offset];
+    if (search) params.push(`%${search}%`);
+
+    const [sellers, countRow] = await Promise.all([
+      pool.query(
+        `SELECT s.*, COUNT(p.id) AS product_count
+         FROM sellers s
+         LEFT JOIN products p ON p.seller = s.address
+         ${whereClause}
+         GROUP BY s.address
+         ORDER BY s.created_at DESC
+         LIMIT $1 OFFSET $2`,
+        params
+      ),
+      pool.query(
+        `SELECT COUNT(*) FROM sellers s ${whereClause}`,
+        search ? [`%${search}%`] : []
+      ),
+    ]);
+
+    res.json({
+      sellers: sellers.rows,
+      total:   Number(countRow.rows[0].count),
+      pages:   Math.ceil(Number(countRow.rows[0].count) / Number(limit)),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch sellers', detail: error.message });
+  }
+});
+
+// PATCH /api/admin/sellers/:address — ban/unban seller
+app.patch('/api/admin/sellers/:address', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { is_banned } = req.body;
+    await pool.query(
+      `UPDATE sellers SET is_banned = $1, updated_at = $2 WHERE address = $3`,
+      [is_banned, Date.now(), req.params.address]
+    );
+    // Also hide their products if banned
+    if (is_banned) {
+      await pool.query(
+        `UPDATE products SET is_available = false WHERE seller = $1`,
+        [req.params.address]
+      );
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update seller', detail: error.message });
+  }
+});
+
+// GET /api/admin/products — list all products with details
+app.get('/api/admin/products', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { page = 1, limit = 20, search = '' } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+    const params: any[] = [Number(limit), offset];
+    const whereClause = search ? `WHERE p.title ILIKE $3 OR p.seller ILIKE $3` : '';
+    if (search) params.push(`%${search}%`);
+
+    const [products, countRow] = await Promise.all([
+      pool.query(
+        `SELECT p.*, s.display_name AS seller_name
+         FROM products p
+         LEFT JOIN sellers s ON s.address = p.seller
+         ${whereClause}
+         ORDER BY p.created_at DESC LIMIT $1 OFFSET $2`,
+        params
+      ),
+      pool.query(
+        `SELECT COUNT(*) FROM products p ${whereClause}`,
+        search ? [`%${search}%`] : []
+      ),
+    ]);
+
+    res.json({
+      products: products.rows,
+      total:    Number(countRow.rows[0].count),
+      pages:    Math.ceil(Number(countRow.rows[0].count) / Number(limit)),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch products', detail: error.message });
+  }
+});
+
+// PATCH /api/admin/products/:id — hide/show product
+app.patch('/api/admin/products/:id', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { is_available } = req.body;
+    await pool.query(
+      `UPDATE products SET is_available = $1, updated_at = $2 WHERE id = $3`,
+      [is_available, Date.now(), req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update product', detail: error.message });
+  }
+});
+
+// GET /api/admin/disputes — all disputes
+app.get('/api/admin/disputes', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { status = '' } = req.query;
+    const where = status ? `WHERE d.status = $1` : '';
+    const result = await pool.query(
+      `SELECT d.*, p.title AS product_title, p.price AS product_price
+       FROM disputes d
+       LEFT JOIN purchases pu ON pu.tx_digest = d.tx_digest
+       LEFT JOIN products p  ON p.id = pu.product_id
+       ${where}
+       ORDER BY d.created_at DESC LIMIT 100`,
+      status ? [status] : []
+    );
+    res.json({ disputes: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch disputes', detail: error.message });
+  }
+});
+
+// PATCH /api/admin/disputes/:id — resolve dispute
+app.patch('/api/admin/disputes/:id', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { status, resolution } = req.body;
+    await pool.query(
+      `UPDATE disputes SET status=$1, resolution=$2, updated_at=$3 WHERE id=$4`,
+      [status, resolution || null, Date.now(), req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update dispute', detail: error.message });
+  }
+});
+
+// GET /api/admin/messages — support messages
+app.get('/api/admin/messages', requireAdmin, async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM support_messages ORDER BY created_at DESC LIMIT 100`
+    );
+    res.json({ messages: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch messages', detail: error.message });
+  }
+});
+
+// PATCH /api/admin/messages/:id
+app.patch('/api/admin/messages/:id', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { status } = req.body;
+    await pool.query(
+      `UPDATE support_messages SET status=$1 WHERE id=$2`,
+      [status, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update message', detail: error.message });
+  }
+});
+
 // ==================== Support Endpoints ====================
 
 // POST /api/support/contact — stores message and emails admin
