@@ -1469,6 +1469,60 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
 
 
 
+
+// ── Seller profile update (public — authenticated by wallet address match)
+app.put('/api/sellers/:address/profile', async (req: any, res: any) => {
+  try {
+    const { address } = req.params;
+    const { display_name, bio, avatar_url, twitter_handle, website_url } = req.body;
+
+    // Upsert seller row
+    await pool.query(
+      `INSERT INTO sellers (address, display_name, bio, avatar_url, twitter_handle, website_url, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+       ON CONFLICT (address) DO UPDATE SET
+         display_name   = EXCLUDED.display_name,
+         bio            = EXCLUDED.bio,
+         avatar_url     = EXCLUDED.avatar_url,
+         twitter_handle = EXCLUDED.twitter_handle,
+         website_url    = EXCLUDED.website_url,
+         updated_at     = EXCLUDED.updated_at`,
+      [address,
+       (display_name || '').trim().slice(0, 50),
+       (bio || '').trim().slice(0, 500),
+       (avatar_url || '').trim(),
+       (twitter_handle || '').replace('@','').trim().slice(0, 50),
+       (website_url || '').trim().slice(0, 200),
+       Date.now()]
+    );
+
+    const result = await pool.query('SELECT * FROM sellers WHERE address = $1', [address]);
+    res.json({ seller: result.rows[0] });
+  } catch (error: any) {
+    console.error('Seller profile update error:', error.message);
+    res.status(500).json({ error: 'Failed to update profile', detail: error.message });
+  }
+});
+
+// GET /api/sellers/:address/reviews — all reviews for a seller's products
+app.get('/api/sellers/:address/reviews', async (req: any, res: any) => {
+  try {
+    const { address } = req.params;
+    const result = await pool.query(
+      `SELECT r.*, p.title AS product_title, p.id AS product_id
+       FROM reviews r
+       JOIN products p ON p.id = r.product_id
+       WHERE p.seller = $1
+       ORDER BY r.created_at DESC
+       LIMIT 20`,
+      [address]
+    );
+    res.json({ reviews: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch reviews', detail: error.message });
+  }
+});
+
 // ==================== Admin Endpoints ====================
 // All protected by x-admin-key header matching ADMIN_KEY env var
 
@@ -1576,8 +1630,8 @@ app.patch('/api/admin/sellers/:address', requireAdmin, async (req: any, res: any
   try {
     const { is_banned } = req.body;
     await pool.query(
-      `UPDATE sellers SET is_banned = $1, updated_at = $2 WHERE address = $3`,
-      [is_banned, Date.now(), req.params.address]
+      `UPDATE sellers SET is_banned = $1 WHERE address = $2`,
+      [is_banned, req.params.address]
     );
     // Also hide their products if banned
     if (is_banned) {
@@ -1631,8 +1685,8 @@ app.patch('/api/admin/products/:id', requireAdmin, async (req: any, res: any) =>
   try {
     const { is_available } = req.body;
     await pool.query(
-      `UPDATE products SET is_available = $1, updated_at = $2 WHERE id = $3`,
-      [is_available, Date.now(), req.params.id]
+      `UPDATE products SET is_available = $1, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000 WHERE id = $2`,
+      [is_available, req.params.id]
     );
     res.json({ success: true });
   } catch (error: any) {

@@ -106,9 +106,15 @@ export default function AdminDashboard() {
   const [resolution,  setResolution]  = useState('');
 
   const apiFetch = useCallback(async (path: string, opts?: RequestInit) => {
+    // Read key fresh from sessionStorage every time — avoids stale closure
+    const adminKey = sessionStorage.getItem('admin_key') || key;
     return fetch(`${API_URL}${path}`, {
       ...opts,
-      headers: { 'x-admin-key': key, 'Content-Type': 'application/json', ...opts?.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-key': adminKey,
+        ...opts?.headers,
+      },
     });
   }, [key]);
 
@@ -144,28 +150,40 @@ export default function AdminDashboard() {
   };
 
   const banSeller = async (address: string, ban: boolean) => {
-    await apiFetch(`/api/admin/sellers/${address}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ is_banned: ban }),
-    });
-    setSellers(s => s.map(x => x.address === address ? { ...x, is_banned: ban } : x));
+    try {
+      const res = await apiFetch(`/api/admin/sellers/${address}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_banned: ban }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(`Failed: ${data.error || data.detail || 'Unknown error'}`); return; }
+      setSellers(s => s.map(x => x.address === address ? { ...x, is_banned: ban } : x));
+    } catch (e: any) { alert(`Error: ${e.message}`); }
   };
 
   const toggleProduct = async (id: string, available: boolean) => {
-    await apiFetch(`/api/admin/products/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ is_available: available }),
-    });
-    setProducts(p => p.map(x => x.id === id ? { ...x, is_available: available } : x));
+    try {
+      const res = await apiFetch(`/api/admin/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_available: available }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(`Failed: ${data.error || data.detail || 'Unknown error'}`); return; }
+      setProducts(p => p.map(x => x.id === id ? { ...x, is_available: available } : x));
+    } catch (e: any) { alert(`Error: ${e.message}`); }
   };
 
   const resolveDispute = async (id: number, status: string) => {
-    await apiFetch(`/api/admin/disputes/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, resolution }),
-    });
-    setDisputes(d => d.map(x => x.id === id ? { ...x, status, resolution } : x));
-    setResolveId(null); setResolution('');
+    try {
+      const res = await apiFetch(`/api/admin/disputes/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, resolution }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(`Failed: ${data.error || data.detail || 'Unknown error'}`); return; }
+      setDisputes(d => d.map(x => x.id === id ? { ...x, status, resolution } : x));
+      setResolveId(null); setResolution('');
+    } catch (e: any) { alert(`Error: ${e.message}`); }
   };
 
   const markMessageRead = async (id: number) => {
