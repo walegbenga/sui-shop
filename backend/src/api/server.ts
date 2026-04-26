@@ -132,6 +132,9 @@ app.get('/api/products', async (req, res) => {
       paramIndex++;
     }
 
+    // Always exclude products from banned sellers
+    whereConditions.push(`seller NOT IN (SELECT address FROM sellers WHERE is_banned = true)`);
+
     // Available filter
     if (available !== undefined) {
       whereConditions.push(`is_available = $${paramIndex}`);
@@ -298,6 +301,7 @@ app.get('/api/products/search/:query', async (req, res) => {
       `SELECT * FROM products 
        WHERE to_tsvector('english', title || ' ' || description) @@ plainto_tsquery('english', $1)
        AND is_available = true
+       AND seller NOT IN (SELECT address FROM sellers WHERE is_banned = true)
        ORDER BY created_at DESC
        LIMIT $2 OFFSET $3`,
       [query, Number(limit), offset]
@@ -359,7 +363,13 @@ app.get('/api/sellers/:address', async (req, res) => {
   try {
     const { address } = req.params;
 
-    const result = await pool.query('SELECT * FROM sellers WHERE address = $1', [address]);
+    const result = await pool.query(
+      'SELECT * FROM sellers WHERE address = $1',
+      [address]
+    );
+    if (result.rows[0]?.is_banned) {
+      return res.status(403).json({ error: 'This seller account has been suspended.' });
+    }
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Seller not found' });
@@ -1496,7 +1506,13 @@ app.put('/api/sellers/:address/profile', async (req: any, res: any) => {
        Date.now()]
     );
 
-    const result = await pool.query('SELECT * FROM sellers WHERE address = $1', [address]);
+    const result = await pool.query(
+      'SELECT * FROM sellers WHERE address = $1',
+      [address]
+    );
+    if (result.rows[0]?.is_banned) {
+      return res.status(403).json({ error: 'This seller account has been suspended.' });
+    }
     res.json({ seller: result.rows[0] });
   } catch (error: any) {
     console.error('Seller profile update error:', error.message);
@@ -1610,7 +1626,7 @@ app.get('/api/admin/sellers', requireAdmin, async (req: any, res: any) => {
         params
       ),
       pool.query(
-        `SELECT COUNT(*) FROM sellers s ${whereClause}`,
+        `SELECT COUNT(DISTINCT s.address) FROM sellers s ${whereClause}`,
         search ? [`%${search}%`] : []
       ),
     ]);

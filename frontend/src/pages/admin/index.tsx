@@ -123,29 +123,38 @@ export default function AdminDashboard() {
     loadTab(tab);
   }, [authed, tab]);
 
-  const loadTab = async (t: Tab) => {
+  const loadTab = async (t: Tab, searchTerm?: string) => {
     setLoading(true);
+    const q = searchTerm !== undefined ? searchTerm : search;
     try {
       if (t === 'overview') {
         const r = await apiFetch('/api/admin/overview');
-        setOverview(await r.json());
-      } else if (t === 'sellers') {
-        const r = await apiFetch(`/api/admin/sellers?search=${search}`);
         const d = await r.json();
+        if (!r.ok) { alert(`Error: ${d.error || 'Failed to load'}`); return; }
+        setOverview(d);
+      } else if (t === 'sellers') {
+        const r = await apiFetch(`/api/admin/sellers?search=${encodeURIComponent(q)}&limit=50`);
+        const d = await r.json();
+        if (!r.ok) { alert(`Error: ${d.error || d.detail || 'Failed to load sellers'}`); return; }
         setSellers(d.sellers || []);
       } else if (t === 'products') {
-        const r = await apiFetch(`/api/admin/products?search=${search}`);
+        const r = await apiFetch(`/api/admin/products?search=${encodeURIComponent(q)}&limit=50`);
         const d = await r.json();
+        if (!r.ok) { alert(`Error: ${d.error || d.detail || 'Failed to load products'}`); return; }
         setProducts(d.products || []);
       } else if (t === 'disputes') {
         const r = await apiFetch('/api/admin/disputes');
         const d = await r.json();
+        if (!r.ok) { alert(`Error: ${d.error || 'Failed to load disputes'}`); return; }
         setDisputes(d.disputes || []);
       } else if (t === 'messages') {
         const r = await apiFetch('/api/admin/messages');
         const d = await r.json();
+        if (!r.ok) { alert(`Error: ${d.error || 'Failed to load messages'}`); return; }
         setMessages(d.messages || []);
       }
+    } catch (e: any) {
+      alert(`Network error: ${e.message}`);
     } finally { setLoading(false); }
   };
 
@@ -251,7 +260,7 @@ export default function AdminDashboard() {
         {/* Tabs */}
         <div className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto pb-0">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => { setTab(t.id); setSearch(''); }}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors bg-transparent cursor-pointer ${
                 tab === t.id
                   ? 'border-indigo-600 text-indigo-600'
@@ -367,10 +376,10 @@ export default function AdminDashboard() {
           <div className="space-y-4">
             <div className="flex gap-3">
               <input value={search} onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && loadTab('sellers')}
+                onKeyDown={e => e.key === 'Enter' && loadTab('sellers', search)}
                 placeholder="Search by address or name..."
                 className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-              <button onClick={() => loadTab('sellers')}
+              <button onClick={() => loadTab('sellers', search)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-500 border-none cursor-pointer">
                 Search
               </button>
@@ -428,10 +437,10 @@ export default function AdminDashboard() {
           <div className="space-y-4">
             <div className="flex gap-3">
               <input value={search} onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && loadTab('products')}
+                onKeyDown={e => e.key === 'Enter' && loadTab('products', search)}
                 placeholder="Search by title or seller..."
                 className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-              <button onClick={() => loadTab('products')}
+              <button onClick={() => loadTab('products', search)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-500 border-none cursor-pointer">
                 Search
               </button>
