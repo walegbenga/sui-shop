@@ -1662,7 +1662,7 @@ app.patch('/api/admin/sellers/:address', requireAdmin, async (req: any, res: any
   }
 });
 
-// GET /api/admin/products — list all products with details
+// GET /api/admin/products — list all products with details. 
 app.get('/api/admin/products', requireAdmin, async (req: any, res: any) => {
   try {
     const { page = 1, limit = 20, search = '' } = req.query;
