@@ -483,9 +483,11 @@ app.get('/api/purchases/:address', async (req, res) => {
     const { address } = req.params;
 
     const result = await pool.query(
-      `SELECT * FROM purchases 
-       WHERE buyer = $1 
-       ORDER BY created_at DESC`,
+      `SELECT pu.*, p.title, p.image_url, p.category, p.file_cid, p.seller
+       FROM purchases pu
+       LEFT JOIN products p ON p.id = pu.product_id
+       WHERE pu.buyer = $1
+       ORDER BY pu.created_at DESC`,
       [address]
     );
 
@@ -1012,93 +1014,6 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
 
 // Download file (only for buyers)
 // ✅ CONSISTENT NAMING: Use buyerAddress everywhere
-/*app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
-  try {
-    const { productId, buyerAddress } = req.params;
-
-    console.log('Download request:', { productId, buyerAddress }); // DEBUG
-
-    // Verify user purchased this product
-    const purchase = await pool.query(
-      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
-      [productId, buyerAddress]
-    );
-
-    if (purchase.rows.length === 0) {
-      return res.status(403).json({ error: 'You must purchase this product to download' });
-    }
-
-    // Get product file info
-    const product = await pool.query(
-      'SELECT file_cid, file_name FROM products WHERE id = $1',
-      [productId]
-    );
-
-    if (product.rows.length === 0 || !product.rows[0].file_cid) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-
-    const { file_cid, file_name } = product.rows[0];
-
-    // Return IPFS URL
-    res.json({
-      url: `https://gateway.pinata.cloud/ipfs/${file_cid}`,
-      fileName: file_name
-    });
-  } catch (error: any) {
-    console.error('Error downloading file::', error.message || error);
-    res.status(500).json({ error: 'Failed to get download link', detail: error.message });
-  }
-});
-
-// Download file - WITH SECURITY
-app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
-  try {
-    const { productId, buyerAddress } = req.params;
-
-    // ✅ VALIDATE ADDRESSES
-    let cleanProductId: string;
-    let cleanBuyerAddress: string;
-    
-    try {
-      cleanProductId = sanitizeAddress(productId);
-      cleanBuyerAddress = sanitizeAddress(buyerAddress);
-    } catch (error: any) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    // Verify purchase
-    const purchase = await pool.query(
-      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
-      [cleanProductId, cleanBuyerAddress]
-    );
-
-    if (purchase.rows.length === 0) {
-      return res.status(403).json({ error: 'You must purchase this product to download' });
-    }
-
-    // Get product file info
-    const product = await pool.query(
-      'SELECT file_cid, file_name FROM products WHERE id = $1',
-      [cleanProductId]
-    );
-
-    if (product.rows.length === 0 || !product.rows[0].file_cid) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-
-    const { file_cid, file_name } = product.rows[0];
-
-    res.json({
-      url: `https://gateway.pinata.cloud/ipfs/${file_cid}`,
-      fileName: file_name
-    });
-  } catch (error: any) {
-    console.error('Download error:', error);
-    res.status(500).json({ error: 'Failed to get download link' });
-  }
-});
-*/
 
 // ✅ SINGLE DOWNLOAD ROUTE - With Security & Hidden URL
 app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
@@ -1662,7 +1577,7 @@ app.patch('/api/admin/sellers/:address', requireAdmin, async (req: any, res: any
   }
 });
 
-// GET /api/admin/products — list all products with details. 
+// GET /api/admin/products — list all products with details
 app.get('/api/admin/products', requireAdmin, async (req: any, res: any) => {
   try {
     const { page = 1, limit = 20, search = '' } = req.query;
