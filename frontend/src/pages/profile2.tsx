@@ -187,26 +187,11 @@ export default function Profile() {
     if (!purchase.file_cid) return toast.error('No file available for this product');
     setDownloading(purchase.product_id);
     try {
-      // Step 1: Get a one-time signed token (60 second expiry)
       const r = await fetch(`${API_URL}/api/download/${purchase.product_id}/${account!.address}`);
-      if (!r.ok) { 
-        const e = await r.json(); 
-        toast.error(e.error || 'Download failed'); 
-        return; 
-      }
-      const { token } = await r.json();
-
-      // Step 2: Open the token URL — backend proxies the file, IPFS URL never exposed
-      // Use a hidden anchor to trigger download without opening new tab
-      const a = document.createElement('a');
-      a.href = `${API_URL}/api/download/file/${token}`;
-      a.download = purchase.title || 'download';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      toast.success('Download started!');
-    } catch { toast.error('Download failed. Please try again.'); }
+      if (!r.ok) { toast.error('Download failed'); return; }
+      const d = await r.json();
+      window.open(d.url, '_blank');
+    } catch { toast.error('Download failed'); }
     finally { setDownloading(null); }
   };
 

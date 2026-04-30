@@ -1016,110 +1016,57 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
 // ✅ CONSISTENT NAMING: Use buyerAddress everywhere
 
 // ✅ SINGLE DOWNLOAD ROUTE - With Security & Hidden URL
-// ── Download endpoint with signed token (prevents URL sharing) ──────────────
-// Step 1: GET /api/download/:productId/:buyerAddress  → returns a signed token
-// Step 2: GET /api/download/file/:token               → validates token, returns IPFS url
-
-const crypto = require('crypto');
-
-// In-memory token store (token → { file_cid, file_name, expires })
-// For production with multiple instances use Redis; fine for single-instance Railway
-const downloadTokens = new Map<string, { file_cid: string; file_name: string; expires: number }>();
-
-// Clean expired tokens every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  downloadTokens.forEach((val, key) => { if (val.expires < now) downloadTokens.delete(key); });
-}, 10 * 60 * 1000);
-
 app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
   try {
     const { productId, buyerAddress } = req.params;
 
+    console.log('Download request:', { productId, buyerAddress });
+
+    // ✅ SECURITY: Validate addresses
     let cleanProductId: string;
     let cleanBuyerAddress: string;
+    
     try {
-      cleanProductId    = sanitizeAddress(productId);
+      cleanProductId = sanitizeAddress(productId);
       cleanBuyerAddress = sanitizeAddress(buyerAddress);
     } catch (error: any) {
       return res.status(400).json({ error: 'Invalid address format' });
     }
 
-    // Verify purchase
+    // ✅ VERIFY PURCHASE
     const purchase = await pool.query(
-      'SELECT id FROM purchases WHERE product_id = $1 AND buyer = $2',
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
       [cleanProductId, cleanBuyerAddress]
     );
+
     if (purchase.rows.length === 0) {
       return res.status(403).json({ error: 'You must purchase this product to download' });
     }
 
-    // Get file info
+    // ✅ GET FILE INFO
     const product = await pool.query(
       'SELECT file_cid, file_name FROM products WHERE id = $1',
       [cleanProductId]
     );
+
     if (product.rows.length === 0 || !product.rows[0].file_cid) {
       return res.status(404).json({ error: 'File not found' });
     }
 
     const { file_cid, file_name } = product.rows[0];
 
-    // Generate a one-time signed token valid for 60 seconds
-    const token   = crypto.randomBytes(32).toString('hex');
-    const expires = Date.now() + 60_000; // 60 seconds
-    downloadTokens.set(token, { file_cid, file_name, expires });
-
-    // Return the token URL — frontend opens this to download
-    res.json({
-      token,
-      url: `/api/download/file/${token}`,
-      expires_in: 60,
-    });
-  } catch (error: any) {
-    console.error('Download token error:', error.message);
-    res.status(500).json({ error: 'Failed to generate download link', detail: error.message });
-  }
-});
-
-// Step 2: Redeem token → proxy file from Pinata (IPFS URL never exposed to client)
-app.get('/api/download/file/:token', async (req, res) => {
-  try {
-    const { token } = req.params;
-    const entry = downloadTokens.get(token);
-
-    if (!entry) {
-      return res.status(403).json({ error: 'Invalid or expired download link. Please request a new one.' });
-    }
-    if (entry.expires < Date.now()) {
-      downloadTokens.delete(token);
-      return res.status(403).json({ error: 'Download link has expired. Please request a new one.' });
-    }
-
-    // Consume token — one-time use
-    downloadTokens.delete(token);
-
-    const { file_cid, file_name } = entry;
-
-    // Proxy the file through our server — client never sees the Pinata/IPFS URL
-    // Node 18+ native fetch — no node-fetch dependency needed
-    const fileRes = await fetch(`https://gateway.pinata.cloud/ipfs/${file_cid}`);
-
-    if (!fileRes.ok) {
-      return res.status(502).json({ error: 'Could not fetch file from storage' });
-    }
-
-    const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
-    res.setHeader('Content-Type', contentType);
+    // ✅ REDIRECT TO IPFS (This hides the full Pinata URL in browser)
+    const ipfsUrl = `https://gateway.pinata.cloud/ipfs/${file_cid}`;
+    
+    // Set download headers so browser treats it as download
     res.setHeader('Content-Disposition', `attachment; filename="${file_name || 'download'}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Robots-Tag', 'noindex');
-
-    // Pipe file directly to response — never stored on our server
-    fileRes.body.pipe(res);
+    
+    // Redirect - browser will show your domain URL, not Pinata
+    res.redirect(ipfsUrl);
+    
   } catch (error: any) {
-    console.error('Download file error:', error.message);
-    res.status(500).json({ error: 'Download failed', detail: error.message });
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download file' });
   }
 });
 // Upload file to IPFS
