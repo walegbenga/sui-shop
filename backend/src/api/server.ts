@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import { PinataSDK } from 'pinata-web3';
 import multer from 'multer';
 import { Request, Response } from 'express';
+import { Readable } from 'stream';
 import { body, validationResult } from 'express-validator';
 const rateLimit = require('express-rate-limit');
 import { pool } from '../config/database';
@@ -1116,7 +1117,16 @@ app.get('/api/download/file/:token', async (req, res) => {
     res.setHeader('X-Robots-Tag', 'noindex');
 
     // Pipe file directly to response — never stored on our server
-    fileRes.body.pipe(res);
+    // fileRes.body.pipe(res);
+    if (!fileRes.ok || !fileRes.body) {
+  res.status(404).json({ error: 'File not found or unavailable' });
+  return;
+}
+
+// Convert Web Stream → Node.js Stream
+
+const nodeReadable = Readable.fromWeb(fileRes.body);   // Node.js 18+
+nodeReadable.pipe(res);
   } catch (error: any) {
     console.error('Download file error:', error.message);
     res.status(500).json({ error: 'Download failed', detail: error.message });
