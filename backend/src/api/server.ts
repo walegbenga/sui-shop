@@ -1452,18 +1452,19 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
 app.put('/api/sellers/:address/profile', async (req: any, res: any) => {
   try {
     const { address } = req.params;
-    const { display_name, bio, avatar_url, twitter_handle, website_url } = req.body;
+    const { display_name, bio, avatar_url, twitter_handle, website_url, email } = req.body;
 
     // Upsert seller row
     await pool.query(
-      `INSERT INTO sellers (address, display_name, bio, avatar_url, twitter_handle, website_url, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+      `INSERT INTO sellers (address, display_name, bio, avatar_url, twitter_handle, website_url, email, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
        ON CONFLICT (address) DO UPDATE SET
          display_name   = EXCLUDED.display_name,
          bio            = EXCLUDED.bio,
          avatar_url     = EXCLUDED.avatar_url,
          twitter_handle = EXCLUDED.twitter_handle,
          website_url    = EXCLUDED.website_url,
+         email          = EXCLUDED.email,
          updated_at     = EXCLUDED.updated_at`,
       [address,
        (display_name || '').trim().slice(0, 50),
@@ -1471,6 +1472,7 @@ app.put('/api/sellers/:address/profile', async (req: any, res: any) => {
        (avatar_url || '').trim(),
        (twitter_handle || '').replace('@','').trim().slice(0, 50),
        (website_url || '').trim().slice(0, 200),
+       (email || '').trim().toLowerCase().slice(0, 200),
        Date.now()]
     );
 
@@ -1509,6 +1511,24 @@ app.get('/api/sellers/:address/reviews', async (req: any, res: any) => {
 
 // ==================== Admin Endpoints ====================
 // All protected by x-admin-key header matching ADMIN_KEY env var
+
+function disputeEmailHtml(productTitle: string, reason: string, buyerAddress: string): string {
+  const siteUrl = process.env.FRONTEND_URL || 'https://digi-chainstore.vercel.app';
+  return `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
+  <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:28px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">⚖️ Dispute Raised</h1>
+  </div>
+  <div style="padding:24px;">
+    <p style="color:#374151;font-size:14px;">A buyer raised a dispute. Please respond within 48 hours.</p>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px;margin:16px 0;">
+      <p style="margin:4px 0;font-size:13px;color:#6b7280;">Product: <strong>${productTitle}</strong></p>
+      <p style="margin:4px 0;font-size:13px;color:#dc2626;font-weight:600;">Reason: ${reason.replace(/_/g,' ')}</p>
+      <p style="margin:4px 0;font-size:12px;color:#9ca3af;font-family:monospace;">Buyer: ${buyerAddress.slice(0,16)}...${buyerAddress.slice(-6)}</p>
+    </div>
+    <a href="${siteUrl}/analytics" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View Dashboard</a>
+  </div></div>`;
+}
+
 
 const requireAdmin = (req: any, res: any, next: any) => {
   const key = req.headers['x-admin-key'];
@@ -1706,6 +1726,39 @@ app.patch('/api/admin/disputes/:id', requireAdmin, async (req: any, res: any) =>
       `UPDATE disputes SET status=$1, resolution=$2, updated_at=$3 WHERE id=$4`,
       [status, resolution || null, Date.now(), req.params.id]
     );
+
+    // Email buyer about resolution
+    try {
+      const disputeRow = await pool.query('SELECT buyer_address FROM disputes WHERE id = $1', [req.params.id]);
+      if (disputeRow.rows[0]) {
+        const buyerAddr = disputeRow.rows[0].buyer_address;
+        const buyerRow  = await pool.query('SELECT email FROM sellers WHERE address = $1', [buyerAddr]);
+        if (buyerRow.rows[0]?.email) {
+          const won = status === 'resolved';
+          const RESEND_KEY = process.env.RESEND_API_KEY;
+          const FROM = process.env.FROM_EMAIL || 'noreply@digichainstore.com';
+          const siteUrl = process.env.FRONTEND_URL || 'https://digi-chainstore.vercel.app';
+          const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
+  <div style="background:${won ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#6b7280,#4b5563)'};padding:28px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">${won ? '✅ Dispute Resolved' : '❌ Dispute Closed'}</h1>
+  </div>
+  <div style="padding:24px;">
+    <div style="background:#f9fafb;border-radius:12px;padding:16px;margin:16px 0;">
+      <p style="margin:0;font-size:13px;color:#374151;"><strong>Resolution:</strong> ${resolution || 'No notes provided.'}</p>
+    </div>
+    <a href="${siteUrl}/profile" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View My Purchases</a>
+  </div></div>`;
+          if (RESEND_KEY) {
+            await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: { 'Authorization': 'Bearer ' + RESEND_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ from: FROM, to: buyerRow.rows[0].email, subject: won ? '✅ Your dispute has been resolved' : '❌ Your dispute has been closed', html }),
+            });
+          }
+        }
+      }
+    } catch (emailErr: any) { console.error('Resolve email error:', emailErr?.message); }
+
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to update dispute', detail: error.message });
@@ -1785,6 +1838,35 @@ app.post('/api/support/dispute', async (req, res) => {
     );
 
     console.log(`⚖️  Dispute filed by ${wallet} for tx ${tx_digest}`);
+
+    // Notify seller about the dispute
+    try {
+      const purchaseRow = await pool.query(
+        'SELECT product_id, seller FROM purchases WHERE tx_digest = $1',
+        [tx_digest]
+      );
+      if (purchaseRow.rows[0]) {
+        const { product_id, seller: sellerAddr } = purchaseRow.rows[0];
+        const [sellerRow, productRow] = await Promise.all([
+          pool.query('SELECT email FROM sellers WHERE address = $1', [sellerAddr]),
+          pool.query('SELECT title FROM products WHERE id = $1', [product_id]),
+        ]);
+        if (sellerRow.rows[0]?.email && productRow.rows[0]) {
+          // Inline template to avoid import issues in server.ts
+          const emailHtml = disputeEmailHtml(productRow.rows[0].title, reason, wallet);
+          const RESEND_KEY = process.env.RESEND_API_KEY;
+          const FROM = process.env.FROM_EMAIL || 'noreply@digichainstore.com';
+          if (RESEND_KEY) {
+            await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: { 'Authorization': 'Bearer ' + RESEND_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ from: FROM, to: sellerRow.rows[0].email, subject: '⚖️ A dispute was raised on your product', html: emailHtml }),
+            });
+          }
+        }
+      }
+    } catch (emailErr: any) { console.error('Dispute email error:', emailErr?.message); }
+
     res.json({ success: true, purchase_found: purchase.rows.length > 0 });
   } catch (error: any) {
     console.error('Dispute error:', error.message);

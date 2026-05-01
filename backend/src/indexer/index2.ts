@@ -4,89 +4,6 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-import { Resend } from 'resend';
-
-// ── Email client ───────────────────────────────────────────────────────────
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@digichainstore.com';
-const SITE_URL   = process.env.FRONTEND_URL || 'https://digi-chainstore.vercel.app';
-
-async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  if (!resend) { console.log(`[Email skipped] To: ${to} | ${subject}`); return; }
-  try {
-    await resend.emails.send({ from: FROM_EMAIL, to, subject, html });
-    console.log(`📧 Sent to ${to}: ${subject}`);
-  } catch (err: any) { console.error(`📧 Email failed:`, err?.message); }
-}
-
-// ── Email templates ────────────────────────────────────────────────────────
-function tplSale(productTitle: string, buyerAddress: string, priceSUI: string, txDigest: string): string {
-  return `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
-  <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:28px;text-align:center;">
-    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">💰 You made a sale!</h1>
-  </div>
-  <div style="padding:24px;">
-    <p style="color:#374151;font-size:14px;">Payment has been sent directly to your wallet.</p>
-    <div style="background:#f9fafb;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:4px 0;font-size:13px;color:#6b7280;">Product: <strong style="color:#111;">${productTitle}</strong></p>
-      <p style="margin:4px 0;font-size:16px;color:#4f46e5;font-weight:800;">+${priceSUI} SUI</p>
-      <p style="margin:4px 0;font-size:12px;color:#9ca3af;font-family:monospace;">Buyer: ${buyerAddress.slice(0,16)}...${buyerAddress.slice(-6)}</p>
-    </div>
-    <a href="${SITE_URL}/analytics" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View Analytics →</a>
-    <p style="font-size:11px;color:#d1d5db;margin-top:12px;">TX: ${txDigest.slice(0,30)}...</p>
-  </div></div>`;
-}
-
-function tplWelcome(address: string): string {
-  return `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
-  <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px 28px;text-align:center;">
-    <h1 style="color:#fff;margin:0;font-size:24px;font-weight:800;">Welcome to Digi ChainStore 🎉</h1>
-    <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px;">The Digital ChainStore of the People</p>
-  </div>
-  <div style="padding:28px;">
-    <p style="color:#374151;font-size:14px;line-height:1.6;">Your blockchain wallet is ready. Buy and sell digital products — no crypto experience needed.</p>
-    <div style="background:#f9fafb;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:0 0 4px;font-size:11px;color:#9ca3af;font-weight:600;">YOUR WALLET</p>
-      <p style="margin:0;font-size:11px;font-family:monospace;color:#374151;word-break:break-all;">${address}</p>
-    </div>
-    <a href="${SITE_URL}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 28px;border-radius:10px;font-weight:800;font-size:14px;text-decoration:none;">Start Shopping →</a>
-  </div>
-  <div style="background:#f9fafb;padding:14px;text-align:center;border-top:1px solid #e5e7eb;">
-    <p style="margin:0;font-size:11px;color:#9ca3af;">Digi ChainStore &nbsp;·&nbsp; <a href="${SITE_URL}/privacy" style="color:#9ca3af;">Privacy</a> &nbsp;·&nbsp; <a href="${SITE_URL}/terms" style="color:#9ca3af;">Terms</a></p>
-  </div></div>`;
-}
-
-function tplDispute(productTitle: string, reason: string, buyerAddress: string): string {
-  return `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
-  <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:28px;text-align:center;">
-    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">⚖️ Dispute Raised</h1>
-  </div>
-  <div style="padding:24px;">
-    <p style="color:#374151;font-size:14px;">A buyer raised a dispute. Please respond within 48 hours.</p>
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:4px 0;font-size:13px;color:#6b7280;">Product: <strong style="color:#111;">${productTitle}</strong></p>
-      <p style="margin:4px 0;font-size:13px;color:#dc2626;font-weight:600;">Reason: ${reason.replace(/_/g,' ')}</p>
-      <p style="margin:4px 0;font-size:12px;color:#9ca3af;font-family:monospace;">Buyer: ${buyerAddress.slice(0,16)}...${buyerAddress.slice(-6)}</p>
-    </div>
-    <a href="${SITE_URL}/analytics" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View Dashboard →</a>
-  </div></div>`;
-}
-
-function tplDisputeResolved(resolution: string, status: string): string {
-  const won = status === 'resolved';
-  return `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
-  <div style="background:${won ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#6b7280,#4b5563)'};padding:28px;text-align:center;">
-    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">${won ? '✅ Dispute Resolved' : '❌ Dispute Closed'}</h1>
-  </div>
-  <div style="padding:24px;">
-    <p style="color:#374151;font-size:14px;">Your dispute has been reviewed by our team.</p>
-    <div style="background:#f9fafb;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:0;font-size:13px;color:#374151;"><strong>Resolution:</strong> ${resolution || 'No additional notes.'}</p>
-    </div>
-    <a href="${SITE_URL}/profile" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View My Purchases →</a>
-  </div></div>`;
-}
-
 const NETWORK_URL = 'https://fullnode.testnet.sui.io:443';
 const PACKAGE_ID = process.env.PACKAGE_ID!;
 const MARKETPLACE_ID = process.env.MARKETPLACE_ID!;
@@ -225,23 +142,6 @@ async function handleProductPurchased(event: any) {
     `UPDATE sellers SET total_sales = total_sales + 1, total_revenue = total_revenue + $1, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000 WHERE address = $2`,
     [price, seller]
   );
-
-  // ── Email seller about sale ────────────────────────────────────────────
-  try {
-    const sellerRow = await pool.query(
-      'SELECT email, display_name FROM sellers WHERE address = $1',
-      [seller]
-    );
-    const productRow = await pool.query('SELECT title FROM products WHERE id = $1', [productId]);
-    if (sellerRow.rows[0]?.email && productRow.rows[0]) {
-      const priceSUI = (Number(price) / 1e9).toFixed(3);
-      await sendEmail(
-        sellerRow.rows[0].email,
-        `💰 You sold "${productRow.rows[0].title}" for ${priceSUI} SUI`,
-        tplSale(productRow.rows[0].title, buyer, priceSUI, event.id.txDigest)
-      );
-    }
-  } catch (emailErr: any) { console.error('Sale email error:', emailErr?.message); }
 
   // ── Create ownership token for resellable products ──────────────────────
   const productCheck = await pool.query(
@@ -499,44 +399,10 @@ async function startIndexer() {
 
   await initializeDatabase();
 
-  // Ensure last_event_cursor column exists (safe to run on existing DBs)
-  await pool.query(`ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_event_cursor TEXT`);
-
   // Seed the single indexer_state row if it doesn't exist yet
   await pool.query(`
     INSERT INTO indexer_state (id, updated_at)
-    VALUES (1, EXTRACT(EPOCH FROM NOW())::BIGINT * 1000) ON CONFLICT (id) DO NOTHING
-  `);
-
-  // Ensure resale tables exist
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS resale_listings (
-      listing_id TEXT PRIMARY KEY,
-      token_id TEXT NOT NULL,
-      seller TEXT NOT NULL,
-      price BIGINT NOT NULL,
-      original_product_id TEXT NOT NULL,
-      is_active BOOLEAN DEFAULT true,
-      created_at BIGINT,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ownership_tokens (
-      token_id TEXT PRIMARY KEY,
-      original_product_id TEXT NOT NULL,
-      current_owner TEXT NOT NULL,
-      previous_owner TEXT,
-      original_seller TEXT NOT NULL,
-      purchase_price BIGINT,
-      purchase_timestamp BIGINT,
-      is_listed_for_resale BOOLEAN DEFAULT false,
-      resale_price BIGINT DEFAULT 0,
-      file_cid TEXT,
-      created_at BIGINT,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
+    VALUES (1, 0) ON CONFLICT (id) DO NOTHING
   `);
 
   console.log('🔄 Running initial event sync...');

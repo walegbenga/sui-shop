@@ -73,6 +73,7 @@ export async function initializeDatabase() {
         avatar_url         TEXT DEFAULT '',
         twitter_handle     VARCHAR(50) DEFAULT '',
         website_url        TEXT DEFAULT '',
+        email              VARCHAR(200) DEFAULT '',
         total_sales        INTEGER DEFAULT 0,
         total_revenue      BIGINT DEFAULT 0,
         products_listed    INTEGER DEFAULT 0,
@@ -182,8 +183,8 @@ export async function initializeDatabase() {
       )
     `);
 
-    // Indexes — wrapped in try/catch since they may already exist with different definitions
-    try { await pool.query(`
+    // Indexes (all IF NOT EXISTS — safe to re-run)
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller               ON products(seller);
       CREATE INDEX IF NOT EXISTS idx_products_category             ON products(category);
       CREATE INDEX IF NOT EXISTS idx_products_available            ON products(is_available);
@@ -207,44 +208,7 @@ export async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_resale_listings_seller        ON resale_listings(seller);
       CREATE INDEX IF NOT EXISTS idx_resale_listings_active        ON resale_listings(is_active);
       CREATE INDEX IF NOT EXISTS idx_resale_listings_product       ON resale_listings(original_product_id);
-    `); } catch(idxErr: any) { console.warn('Index warning (safe):', idxErr.message); }
-
-    // Support tables
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS support_messages (
-        id           SERIAL PRIMARY KEY,
-        name         TEXT DEFAULT '',
-        email        TEXT NOT NULL,
-        subject      TEXT DEFAULT 'Support Request',
-        message      TEXT NOT NULL,
-        wallet_address TEXT,
-        status       TEXT DEFAULT 'open',
-        created_at   BIGINT NOT NULL DEFAULT 0
-      )
     `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS disputes (
-        id             SERIAL PRIMARY KEY,
-        tx_digest      TEXT UNIQUE NOT NULL,
-        buyer_address  TEXT NOT NULL,
-        reason         TEXT NOT NULL,
-        description    TEXT NOT NULL,
-        status         TEXT DEFAULT 'open',
-        resolution     TEXT,
-        created_at     BIGINT NOT NULL DEFAULT 0,
-        updated_at     BIGINT NOT NULL DEFAULT 0
-      )
-    `);
-
-    try {
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_disputes_buyer   ON disputes(buyer_address);
-        CREATE INDEX IF NOT EXISTS idx_disputes_status  ON disputes(status);
-        CREATE INDEX IF NOT EXISTS idx_support_email    ON support_messages(email);
-        CREATE INDEX IF NOT EXISTS idx_support_status   ON support_messages(status);
-      `);
-    } catch (e: any) { console.warn('Support index warning:', e.message); }
 
     console.log('✅ Database schema initialized successfully');
   } catch (error) {

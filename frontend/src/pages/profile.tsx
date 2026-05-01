@@ -21,7 +21,7 @@ interface Following {
 }
 interface SellerProfile {
   address: string; display_name: string; bio: string;
-  avatar_url: string; twitter_handle: string; website_url: string;
+  avatar_url: string; twitter_handle: string; website_url: string; email: string;
   total_sales: number; total_revenue: string; follower_count: number;
   products_listed: number; created_at: string;
 }
@@ -43,11 +43,12 @@ function EditProfileModal({ profile, onSave, onClose }: {
   const [avatar,  setAvatar]  = useState(profile?.avatar_url || '');
   const [twitter, setTwitter] = useState(profile?.twitter_handle || '');
   const [website, setWebsite] = useState(profile?.website_url || '');
+  const [email,   setEmail]   = useState((profile as any)?.email || '');
   const [saving,  setSaving]  = useState(false);
 
   const save = async () => {
     setSaving(true);
-    await onSave({ display_name: name, bio, avatar_url: avatar, twitter_handle: twitter, website_url: website });
+    await onSave({ display_name: name, bio, avatar_url: avatar, twitter_handle: twitter, website_url: website, email });
     setSaving(false);
   };
 
@@ -85,6 +86,14 @@ function EditProfileModal({ profile, onSave, onClose }: {
             <textarea value={bio} onChange={e => setBio(e.target.value)} placeholder="Tell buyers about yourself..." rows={3} maxLength={200} className={`${inputCls} resize-none`} />
             <p className="text-xs text-gray-300 text-right mt-1">{bio.length}/200</p>
           </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">
+              Notification Email
+              <span className="text-gray-400 font-normal ml-1">(for sale & dispute alerts)</span>
+            </label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com" maxLength={200} className={inputCls} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-600 block mb-1">Twitter / X</label>
@@ -94,6 +103,17 @@ function EditProfileModal({ profile, onSave, onClose }: {
               <label className="text-xs font-semibold text-gray-600 block mb-1">Website</label>
               <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://..." maxLength={200} className={inputCls} />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">
+              Notification Email
+              <span className="ml-1 text-gray-400 font-normal">(for sale alerts)</span>
+            </label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com" maxLength={200} className={inputCls} />
+            <p className="text-xs text-gray-400 mt-1">
+              We'll email you when someone buys your product. Never shared publicly.
+            </p>
           </div>
         </div>
         <div className="px-6 pb-6 flex gap-3">
