@@ -12,6 +12,7 @@ import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 const rateLimit = require('express-rate-limit');
 import { pool } from '../config/database';
+import { createHash } from 'crypto';
 
 dotenv.config();
 
@@ -35,7 +36,7 @@ app.use(express.json());
 // Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit (for video uploads)
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
 // Initialize Pinata
@@ -132,9 +133,6 @@ app.get('/api/products', async (req, res) => {
       paramIndex++;
     }
 
-    // Always exclude products from banned sellers
-    whereConditions.push(`seller NOT IN (SELECT address FROM sellers WHERE is_banned = true)`);
-
     // Available filter
     if (available !== undefined) {
       whereConditions.push(`is_available = $${paramIndex}`);
@@ -183,19 +181,29 @@ app.get('/api/products', async (req, res) => {
 
     // Get total count
     const countResult = await pool.query(
-      `SELECT COUNT(*) as total FROM products ${whereClause}`,
-      queryParams
-    );
+  `SELECT COUNT(*) as total 
+   FROM products p
+   LEFT JOIN sellers s ON p.seller = s.address
+   ${whereClause}`,
+  queryParams
+);
     const totalCount = parseInt(countResult.rows[0].total);
 
     // Get products
     const result = await pool.query(
-      `SELECT * FROM products 
-       ${whereClause}
-       ORDER BY ${sortColumn} ${order}
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...queryParams, Number(limit), offset]
-    );
+  `SELECT 
+     p.*,
+     COALESCE(s.is_verified, false) AS seller_is_verified
+   FROM products p
+   LEFT JOIN sellers s ON p.seller = s.address
+   ${whereClause}
+   ORDER BY 
+     COALESCE(s.is_verified, false) DESC,
+     p.${sortColumn} ${order}
+   LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+  [...queryParams, Number(limit), offset]
+);
+
 
     res.json({
       products: result.rows,
@@ -206,9 +214,12 @@ app.get('/api/products', async (req, res) => {
         totalPages: Math.ceil(totalCount / Number(limit)),
       },
     });
-  } catch (error: any) {
-    console.error('Error fetching products::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch products', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching products::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch products', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -237,9 +248,12 @@ app.put('/api/products/:id', async (req, res) => {
     );
 
     res.json({ message: 'Product updated successfully' });
-  } catch (error: any) {
-    console.error('Error updating product::', error.message || error);
-    res.status(500).json({ error: 'Failed to update product', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error updating product::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to update product', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -263,9 +277,12 @@ app.get('/api/products/:id', async (req, res) => {
     }
 
     res.json(result.rows[0]);
-  } catch (error: any) {
-    console.error('Error fetching product::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch product', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching product::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch product', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -284,9 +301,9 @@ app.get('/api/products/:id', async (req, res) => {
     }
 
     res.json(result.rows[0]);
-  } catch (error: any) {
-    console.error('Error fetching product::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch product', detail: error.message });
+  } catch (error) {
+    console.error('Error fetching product::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch product', detail: (error as any)?.message });
   }
 });*/
 
@@ -301,16 +318,18 @@ app.get('/api/products/search/:query', async (req, res) => {
       `SELECT * FROM products 
        WHERE to_tsvector('english', title || ' ' || description) @@ plainto_tsquery('english', $1)
        AND is_available = true
-       AND seller NOT IN (SELECT address FROM sellers WHERE is_banned = true)
        ORDER BY created_at DESC
        LIMIT $2 OFFSET $3`,
       [query, Number(limit), offset]
     );
 
     res.json({ products: result.rows });
-  } catch (error: any) {
-    console.error('Error searching products::', error.message || error);
-    res.status(500).json({ error: 'Failed to search products', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching products::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch products', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -331,8 +350,8 @@ app.get('/api/sellers/:address/products', async (req, res) => {
 
     res.json({ products: result.rows });
   } catch (error: any) {
-    console.error('Error fetching seller products:', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch seller products', detail: error.message });
+    console.error('Error fetching seller products:', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch seller products', detail: error?.message });
   }
 });
 
@@ -353,9 +372,12 @@ app.get('/api/sellers/top', async (req, res) => {
     );
 
     res.json({ sellers: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching top sellers::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch top sellers', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching top sellers::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch top sellers', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -363,22 +385,19 @@ app.get('/api/sellers/:address', async (req, res) => {
   try {
     const { address } = req.params;
 
-    const result = await pool.query(
-      'SELECT * FROM sellers WHERE address = $1',
-      [address]
-    );
-    if (result.rows[0]?.is_banned) {
-      return res.status(403).json({ error: 'This seller account has been suspended.' });
-    }
+    const result = await pool.query('SELECT * FROM sellers WHERE address = $1', [address]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Seller not found' });
     }
 
     res.json(result.rows[0]);
-  } catch (error: any) {
-    console.error('Error fetching seller::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch seller', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching sellers::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch sellers', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -394,17 +413,24 @@ app.get('/api/products/:id/reviews', async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const result = await pool.query(
-      `SELECT * FROM reviews 
-       WHERE product_id = $1 
-       ORDER BY created_at DESC
+      `SELECT 
+         r.*,
+         CASE WHEN vb.address IS NOT NULL THEN true ELSE false END AS reviewer_is_verified_buyer
+       FROM reviews r
+       LEFT JOIN verified_buyers vb 
+         ON r.reviewer = vb.address AND vb.is_active = true
+       WHERE r.product_id = $1
+       ORDER BY 
+         reviewer_is_verified_buyer DESC,   -- verified buyer reviews first
+         r.created_at DESC
        LIMIT $2 OFFSET $3`,
       [id, Number(limit), offset]
     );
 
     res.json({ reviews: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching reviews::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch reviews', detail: error.message });
+  } catch (error) {
+    console.error('Error fetching reviews:', error);
+    res.status(500).json({ error: 'Failed to fetch reviews' });
   }
 });
 
@@ -424,9 +450,12 @@ app.get('/api/stats', async (req, res) => {
     `);
 
     res.json(stats.rows[0]);
-  } catch (error: any) {
-    console.error('Error fetching stats::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch stats', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching stats::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch stats', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -448,9 +477,12 @@ app.get('/api/products/trending', async (req, res) => {
     );
 
     res.json({ products: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching trending products::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch trending products', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching trending products::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch trending products', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -468,9 +500,12 @@ app.get('/api/categories', async (req, res) => {
     );
 
     res.json({ categories: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching categories::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch categories', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching categories::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch categories', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -483,18 +518,19 @@ app.get('/api/purchases/:address', async (req, res) => {
     const { address } = req.params;
 
     const result = await pool.query(
-      `SELECT pu.*, p.title, p.image_url, p.category, p.file_cid, p.seller
-       FROM purchases pu
-       LEFT JOIN products p ON p.id = pu.product_id
-       WHERE pu.buyer = $1
-       ORDER BY pu.created_at DESC`,
+      `SELECT * FROM purchases 
+       WHERE buyer = $1 
+       ORDER BY created_at DESC`,
       [address]
     );
 
     res.json({ purchases: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching purchases::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch purchases', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching purchases::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch purchases', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -527,9 +563,12 @@ app.post('/api/sellers/:address/follow', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Followed successfully' });
-  } catch (error: any) {
-    console.error('Error following seller::', error.message || error);
-    res.status(500).json({ error: 'Failed to follow seller', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error follow sellers::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to follow', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -559,9 +598,12 @@ app.delete('/api/sellers/:address/follow', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Unfollowed successfully' });
-  } catch (error: any) {
-    console.error('Error unfollowing seller::', error.message || error);
-    res.status(500).json({ error: 'Failed to unfollow seller', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error unfollow sellers::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to unfollow sellers', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -579,9 +621,12 @@ app.get('/api/sellers/:address/following/:userAddress', async (req, res) => {
     );
 
     res.json({ isFollowing: result.rows[0].is_following });
-  } catch (error: any) {
-    console.error('Error checking follow status::', error.message || error);
-    res.status(500).json({ error: 'Failed to check follow status', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error checking follow status::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to chck follow status', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -600,9 +645,12 @@ app.get('/api/users/:address/following', async (req, res) => {
     );
 
     res.json({ following: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching following::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch following', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching following::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch following', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -625,9 +673,12 @@ app.post('/api/favorites', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Added to favorites' });
-  } catch (error: any) {
-    console.error('Error adding to favorites::', error.message || error);
-    res.status(500).json({ error: 'Failed to add to favorites', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error adding favorites::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to add favorites', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -650,9 +701,12 @@ app.delete('/api/favorites', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Removed from favorites' });
-  } catch (error: any) {
-    console.error('Error removing from favorites::', error.message || error);
-    res.status(500).json({ error: 'Failed to remove from favorites', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error removing from favorites::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to remove from favorites', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -684,9 +738,12 @@ app.get('/api/users/:address/favorites', async (req, res) => {
     );
 
     res.json({ favorites: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching favorites::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch favorites', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching favorites::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch favorites', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -704,9 +761,12 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
     );
 
     res.json({ isFavorited: result.rows[0].is_favorited });
-  } catch (error: any) {
-    console.error('Error checking favorite status::', error.message || error);
-    res.status(500).json({ error: 'Failed to check favorite status', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error checking favorite status::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to check favorite status', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -760,9 +820,9 @@ app.get('/api/favorites/check/:userAddress/:productId', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Review submitted successfully' });
-  } catch (error: any) {
-    console.error('Error submitting review::', error.message || error);
-    res.status(500).json({ error: 'Failed to submit review', detail: error.message });
+  } catch (error) {
+    console.error('Error submitting review::', error?.message || error);
+    res.status(500).json({ error: 'Failed to submit review', detail: (error as any)?.message });
   }
 });
 */
@@ -831,8 +891,8 @@ app.post('/api/reviews', reviewLimiter, async (req, res) => {
 
     res.json({ success: true, message: 'Review submitted successfully' });
   } catch (error: any) {
-    console.error('Error submitting review::', error.message || error);
-    res.status(500).json({ error: 'Failed to submit review', detail: error.message });
+    console.error('Error submitting review::', error?.message || error);
+    res.status(500).json({ error: 'Failed to submit review', detail: (error as any)?.message });
   }
 });
 // Get reviews for a product
@@ -848,9 +908,9 @@ app.post('/api/reviews', reviewLimiter, async (req, res) => {
     );
 
     res.json({ reviews: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching reviews::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch reviews', detail: error.message });
+  } catch (error) {
+    console.error('Error fetching reviews::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch reviews', detail: (error as any)?.message });
   }
 });*/
 
@@ -885,9 +945,12 @@ app.put('/api/products/:id', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Product updated successfully' });
-  } catch (error: any) {
-    console.error('Error updating product::', error.message || error);
-    res.status(500).json({ error: 'Failed to update product', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error updating product::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to updating products', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -920,9 +983,12 @@ app.delete('/api/products/:id', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Product deleted successfully' });
-  } catch (error: any) {
-    console.error('Error deleting product::', error.message || error);
-    res.status(500).json({ error: 'Failed to delete product', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error deleting product::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to delete product', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -985,9 +1051,12 @@ app.get('/api/sellers/:address/analytics', async (req, res) => {
       topProducts: topProducts.rows,
       recentSales: recentSales.rows,
     });
-  } catch (error: any) {
-    console.error('Error fetching analytics::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch analytics', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching analytics::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch analytics', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -1005,126 +1074,158 @@ app.get('/api/sellers/:address/followers', async (req, res) => {
     );
 
     res.json({ followers: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching followers::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch followers', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching followers::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch followers', detail: (error as any)?.message });
+    }
   }
 });
 
 
 // Download file (only for buyers)
 // ✅ CONSISTENT NAMING: Use buyerAddress everywhere
-
-// ✅ SINGLE DOWNLOAD ROUTE - With Security & Hidden URL
-// ── Download endpoint with signed token (prevents URL sharing) ──────────────
-// Step 1: GET /api/download/:productId/:buyerAddress  → returns a signed token
-// Step 2: GET /api/download/file/:token               → validates token, returns IPFS url
-
-const crypto = require('crypto');
-
-// In-memory token store (token → { file_cid, file_name, expires })
-// For production with multiple instances use Redis; fine for single-instance Railway
-const downloadTokens = new Map<string, { file_cid: string; file_name: string; expires: number }>();
-
-// Clean expired tokens every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  downloadTokens.forEach((val, key) => { if (val.expires < now) downloadTokens.delete(key); });
-}, 10 * 60 * 1000);
-
-app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
+/*app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
   try {
     const { productId, buyerAddress } = req.params;
 
-    let cleanProductId: string;
-    let cleanBuyerAddress: string;
-    try {
-      cleanProductId    = sanitizeAddress(productId);
-      cleanBuyerAddress = sanitizeAddress(buyerAddress);
-    } catch (error: any) {
-      return res.status(400).json({ error: 'Invalid address format' });
-    }
+    console.log('Download request:', { productId, buyerAddress }); // DEBUG
 
-    // Verify purchase
+    // Verify user purchased this product
     const purchase = await pool.query(
-      'SELECT id FROM purchases WHERE product_id = $1 AND buyer = $2',
-      [cleanProductId, cleanBuyerAddress]
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [productId, buyerAddress]
     );
+
     if (purchase.rows.length === 0) {
       return res.status(403).json({ error: 'You must purchase this product to download' });
     }
 
-    // Get file info
+    // Get product file info
     const product = await pool.query(
       'SELECT file_cid, file_name FROM products WHERE id = $1',
-      [cleanProductId]
+      [productId]
     );
+
     if (product.rows.length === 0 || !product.rows[0].file_cid) {
       return res.status(404).json({ error: 'File not found' });
     }
 
     const { file_cid, file_name } = product.rows[0];
 
-    // Generate a one-time signed token valid for 60 seconds
-    const token   = crypto.randomBytes(32).toString('hex');
-    const expires = Date.now() + 60_000; // 60 seconds
-    downloadTokens.set(token, { file_cid, file_name, expires });
-
-    // Return the token URL — frontend opens this to download
+    // Return IPFS URL
     res.json({
-      token,
-      url: `/api/download/file/${token}`,
-      expires_in: 60,
+      url: `https://gateway.pinata.cloud/ipfs/${file_cid}`,
+      fileName: file_name
     });
-  } catch (error: any) {
-    console.error('Download token error:', error.message);
-    res.status(500).json({ error: 'Failed to generate download link', detail: error.message });
+  } catch (error) {
+    console.error('Error downloading file::', error?.message || error);
+    res.status(500).json({ error: 'Failed to get download link', detail: (error as any)?.message });
   }
 });
 
-// Step 2: Redeem token → proxy file from Pinata (IPFS URL never exposed to client)
-app.get('/api/download/file/:token', async (req, res) => {
+// Download file - WITH SECURITY
+app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
   try {
-    const { token } = req.params;
-    const entry = downloadTokens.get(token);
+    const { productId, buyerAddress } = req.params;
 
-    if (!entry) {
-      return res.status(403).json({ error: 'Invalid or expired download link. Please request a new one.' });
-    }
-    if (entry.expires < Date.now()) {
-      downloadTokens.delete(token);
-      return res.status(403).json({ error: 'Download link has expired. Please request a new one.' });
-    }
-
-    // Consume token — one-time use
-    downloadTokens.delete(token);
-
-    const { file_cid, file_name } = entry;
-
-    // Proxy the file through our server — client never sees the Pinata/IPFS URL
-    // Node 18+ native fetch — buffer the response and send it
-    const fileRes = await fetch(`https://gateway.pinata.cloud/ipfs/${file_cid}`);
-
-    if (!fileRes.ok) {
-      return res.status(502).json({ error: 'Could not fetch file from storage' });
+    // ✅ VALIDATE ADDRESSES
+    let cleanProductId: string;
+    let cleanBuyerAddress: string;
+    
+    try {
+      cleanProductId = sanitizeAddress(productId);
+      cleanBuyerAddress = sanitizeAddress(buyerAddress);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
     }
 
-    const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
-    const contentLength = fileRes.headers.get('content-length');
+    // Verify purchase
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [cleanProductId, cleanBuyerAddress]
+    );
 
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${file_name || 'download'}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Robots-Tag', 'noindex');
-    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (purchase.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product to download' });
+    }
 
-    // Read as ArrayBuffer → Buffer → send (Web API fetch has no .pipe())
-    const arrayBuffer = await fileRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    res.end(buffer);
+    // Get product file info
+    const product = await pool.query(
+      'SELECT file_cid, file_name FROM products WHERE id = $1',
+      [cleanProductId]
+    );
+
+    if (product.rows.length === 0 || !product.rows[0].file_cid) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const { file_cid, file_name } = product.rows[0];
+
+    res.json({
+      url: `https://gateway.pinata.cloud/ipfs/${file_cid}`,
+      fileName: file_name
+    });
   } catch (error: any) {
-    console.error('Download file error:', error.message);
-    res.status(500).json({ error: 'Download failed', detail: error.message });
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to get download link' });
+  }
+});
+*/
+
+// ✅ SINGLE DOWNLOAD ROUTE - With Security & Hidden URL
+app.get('/api/download/:productId/:buyerAddress', async (req, res) => {
+  try {
+    const { productId, buyerAddress } = req.params;
+
+    console.log('Download request:', { productId, buyerAddress });
+
+    // ✅ SECURITY: Validate addresses
+    let cleanProductId: string;
+    let cleanBuyerAddress: string;
+    
+    try {
+      cleanProductId = sanitizeAddress(productId);
+      cleanBuyerAddress = sanitizeAddress(buyerAddress);
+    } catch (error: any) {
+      return res.status(400).json({ error: 'Invalid address format' });
+    }
+
+    // ✅ VERIFY PURCHASE
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE product_id = $1 AND buyer = $2',
+      [cleanProductId, cleanBuyerAddress]
+    );
+
+    if (purchase.rows.length === 0) {
+      return res.status(403).json({ error: 'You must purchase this product to download' });
+    }
+
+    // ✅ GET FILE INFO
+    const product = await pool.query(
+      'SELECT file_cid, file_name FROM products WHERE id = $1',
+      [cleanProductId]
+    );
+
+    if (product.rows.length === 0 || !product.rows[0].file_cid) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const { file_cid, file_name } = product.rows[0];
+
+    // ✅ REDIRECT TO IPFS (This hides the full Pinata URL in browser)
+    const ipfsUrl = `https://gateway.pinata.cloud/ipfs/${file_cid}`;
+    
+    // Set download headers so browser treats it as download
+    res.setHeader('Content-Disposition', `attachment; filename="${file_name || 'download'}"`);
+    
+    // Redirect - browser will show your domain URL, not Pinata
+    res.redirect(ipfsUrl);
+    
+  } catch (error: any) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download file' });
   }
 });
 // Upload file to IPFS
@@ -1213,58 +1314,26 @@ app.post('/api/upload', uploadLimiter, upload.single('file'), async (req: Reques
 
     // ✅ VALIDATE FILE TYPE
     const allowedTypes = [
-      // Documents
       'application/pdf',
-      // Archives
       'application/zip',
       'application/x-zip-compressed',
-      'application/x-rar-compressed',
-      'application/x-7z-compressed',
-      // Images
       'image/jpeg',
       'image/png',
       'image/webp',
-      'image/gif',
-      'image/svg+xml',
-      // Video
-      'video/mp4',
-      'video/avi',
-      'video/x-msvideo',
-      'video/quicktime',
-      'video/x-matroska',
-      'video/webm',
-      'video/x-ms-wmv',
-      'video/mpeg',
-      // Audio
-      'audio/mpeg',
-      'audio/mp3',
-      'audio/wav',
-      'audio/ogg',
-      'audio/flac',
-      'audio/x-flac',
-      // Text / Code
       'text/plain',
-      'text/html',
-      'text/css',
-      'application/json',
-      'application/javascript',
     ];
 
     if (!allowedTypes.includes(req.file.mimetype)) {
       return res.status(400).json({ 
         error: 'File type not allowed',
-        allowedTypes: 'PDF, ZIP, RAR, 7Z, JPG, PNG, WEBP, GIF, SVG, MP4, AVI, MOV, MKV, WEBM, WMV, MP3, WAV, OGG, FLAC, TXT, HTML, CSS, JSON, JS',
-        received: req.file.mimetype,
+        allowedTypes: 'PDF, ZIP, JPG, PNG, WEBP, TXT'
       });
     }
 
-    // ✅ VALIDATE FILE SIZE — 500MB for video, 100MB for everything else
-    const isVideo = req.file.mimetype.startsWith('video/');
-    const MAX_SIZE = isVideo ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+    // ✅ VALIDATE FILE SIZE (100MB)
+    const MAX_SIZE = 100 * 1024 * 1024;
     if (req.file.size > MAX_SIZE) {
-      return res.status(400).json({ 
-        error: `File size exceeds limit. Max: ${isVideo ? '500MB for video' : '100MB'}`,
-      });
+      return res.status(400).json({ error: 'File size exceeds 100MB limit' });
     }
 
     console.log(`📤 Uploading file: ${req.file.originalname}`);
@@ -1334,9 +1403,9 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
     }
 
     res.json({ tokenId: token.data.objectId });
-  } catch (error: any) {
-    console.error('Error fetching ownership token::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch ownership token', detail: error.message });
+  } catch (error) {
+    console.error('Error fetching ownership token::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch ownership token', detail: (error as any)?.message });
   }
 });
 */
@@ -1359,9 +1428,9 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
     `);
 
     res.json({ listings: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching resale listings::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch resale listings', detail: error.message });
+  } catch (error) {
+    console.error('Error fetching resale listings::', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch resale listings', detail: (error as any)?.message });
   }
 });
 */
@@ -1388,9 +1457,12 @@ app.get('/api/resale-listings/user/:userAddress/:productId', async (req, res) =>
     }
 
     res.json({ listing: result.rows[0] });
-  } catch (error: any) {
-    console.error('Error checking user listing::', error.message || error);
-    res.status(500).json({ error: 'Failed to check user listing', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error checking user listing::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to check user listing', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -1419,9 +1491,12 @@ app.get('/api/resale-listings', async (req, res) => {
     );
 
     res.json({ listings: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching resale listings::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch resale listings', detail: error.message });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching resale listings::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch resale listing', detail: (error as any)?.message });
+    }
   }
 });
 
@@ -1442,474 +1517,581 @@ app.get('/api/ownership-token/:productId/:userAddress', async (req, res) => {
     }
 
     res.json({ tokenId: result.rows[0].token_id });
-  } catch (error: any) {
-    console.error('Error fetching ownership token::', error.message || error);
-    res.status(500).json({ error: 'Failed to fetch ownership token', detail: error.message });
-  }
-});
-
-// ==================== Start Server ====================
-
-
-
-
-// ── Seller profile update (public — authenticated by wallet address match)
-app.put('/api/sellers/:address/profile', async (req: any, res: any) => {
-  try {
-    const { address } = req.params;
-    const { display_name, bio, avatar_url, twitter_handle, website_url, email } = req.body;
-
-    // Upsert seller row
-    await pool.query(
-      `INSERT INTO sellers (address, display_name, bio, avatar_url, twitter_handle, website_url, email, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
-       ON CONFLICT (address) DO UPDATE SET
-         display_name   = EXCLUDED.display_name,
-         bio            = EXCLUDED.bio,
-         avatar_url     = EXCLUDED.avatar_url,
-         twitter_handle = EXCLUDED.twitter_handle,
-         website_url    = EXCLUDED.website_url,
-         email          = EXCLUDED.email,
-         updated_at     = EXCLUDED.updated_at`,
-      [address,
-       (display_name || '').trim().slice(0, 50),
-       (bio || '').trim().slice(0, 500),
-       (avatar_url || '').trim(),
-       (twitter_handle || '').replace('@','').trim().slice(0, 50),
-       (website_url || '').trim().slice(0, 200),
-       (email || '').trim().toLowerCase().slice(0, 200),
-       Date.now()]
-    );
-
-    const result = await pool.query(
-      'SELECT * FROM sellers WHERE address = $1',
-      [address]
-    );
-    if (result.rows[0]?.is_banned) {
-      return res.status(403).json({ error: 'This seller account has been suspended.' });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching ownership token::', error?.message || error);
+    }else{
+      res.status(500).json({ error: 'Failed to fetch ownership token', detail: (error as any)?.message });
     }
-    res.json({ seller: result.rows[0] });
-  } catch (error: any) {
-    console.error('Seller profile update error:', error.message);
-    res.status(500).json({ error: 'Failed to update profile', detail: error.message });
   }
 });
 
-// GET /api/sellers/:address/reviews — all reviews for a seller's products
-app.get('/api/sellers/:address/reviews', async (req: any, res: any) => {
+// ==================== Verified Users Endpoints ====================
+
+// ── Admin: Verify a seller ────────────────────────────────────────────────────
+app.post('/api/admin/verify-seller', async (req, res) => {
+  try {
+    const { adminAddress, sellerAddress, verified_at } = req.body;
+
+    if (!adminAddress || !sellerAddress) {
+      return res.status(400).json({ error: 'adminAddress and sellerAddress required' });
+    }
+
+    // Upsert seller row and mark as verified
+    await pool.query(
+      `INSERT INTO sellers (address, total_sales, total_revenue, follower_count, is_banned, is_verified, verified_at, verified_by)
+       VALUES ($1, 0, 0, 0, false, true, $2, $3)
+       ON CONFLICT (address) DO UPDATE SET
+         is_verified = true,
+         verified_at = $2,
+         verified_by = $3,
+         updated_at  = NOW()`,
+      [sellerAddress, verified_at || Date.now(), adminAddress]
+    );
+
+    // Boost all their products in ranking
+    await pool.query(
+      `UPDATE products SET seller_is_verified = true WHERE seller = $1`,
+      [sellerAddress]
+    );
+
+    console.log(`✅ Seller verified: ${sellerAddress} by ${adminAddress}`);
+    res.json({ success: true, message: 'Seller verified successfully' });
+  } catch (error) {
+    console.error('Error verifying seller:', error);
+    res.status(500).json({ error: 'Failed to verify seller' });
+  }
+});
+
+// ── Admin: Unverify a seller ──────────────────────────────────────────────────
+app.post('/api/admin/unverify-seller', async (req, res) => {
+  try {
+    const { adminAddress, sellerAddress } = req.body;
+
+    if (!adminAddress || !sellerAddress) {
+      return res.status(400).json({ error: 'adminAddress and sellerAddress required' });
+    }
+
+    await pool.query(
+      `UPDATE sellers SET is_verified = false, updated_at = NOW() WHERE address = $1`,
+      [sellerAddress]
+    );
+
+    await pool.query(
+      `UPDATE products SET seller_is_verified = false WHERE seller = $1`,
+      [sellerAddress]
+    );
+
+    res.json({ success: true, message: 'Seller unverified' });
+  } catch (error) {
+    console.error('Error unverifying seller:', error);
+    res.status(500).json({ error: 'Failed to unverify seller' });
+  }
+});
+
+// ── Admin: Verify a buyer ─────────────────────────────────────────────────────
+app.post('/api/admin/verify-buyer', async (req, res) => {
+  try {
+    const { adminAddress, buyerAddress, verified_at } = req.body;
+
+    if (!adminAddress || !buyerAddress) {
+      return res.status(400).json({ error: 'adminAddress and buyerAddress required' });
+    }
+
+    await pool.query(
+      `INSERT INTO verified_buyers (address, verified_at, verified_by, is_active)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (address) DO UPDATE SET
+         verified_at = $2,
+         verified_by = $3,
+         is_active   = true,
+         created_at  = NOW()`,
+      [buyerAddress, verified_at || Date.now(), adminAddress]
+    );
+
+    console.log(`✅ Buyer verified: ${buyerAddress} by ${adminAddress}`);
+    res.json({ success: true, message: 'Buyer verified successfully' });
+  } catch (error) {
+    console.error('Error verifying buyer:', error);
+    res.status(500).json({ error: 'Failed to verify buyer' });
+  }
+});
+
+// ── Admin: Unverify a buyer ───────────────────────────────────────────────────
+app.post('/api/admin/unverify-buyer', async (req, res) => {
+  try {
+    const { adminAddress, buyerAddress } = req.body;
+
+    if (!adminAddress || !buyerAddress) {
+      return res.status(400).json({ error: 'adminAddress and buyerAddress required' });
+    }
+
+    await pool.query(
+      `UPDATE verified_buyers SET is_active = false WHERE address = $1`,
+      [buyerAddress]
+    );
+
+    res.json({ success: true, message: 'Buyer unverified' });
+  } catch (error) {
+    console.error('Error unverifying buyer:', error);
+    res.status(500).json({ error: 'Failed to unverify buyer' });
+  }
+});
+
+// ── Check if a user is a verified buyer ──────────────────────────────────────
+app.get('/api/verified-buyer/:address', async (req, res) => {
   try {
     const { address } = req.params;
+
     const result = await pool.query(
-      `SELECT r.*, p.title AS product_title, p.id AS product_id
-       FROM reviews r
-       JOIN products p ON p.id = r.product_id
-       WHERE p.seller = $1
-       ORDER BY r.created_at DESC
-       LIMIT 20`,
+      `SELECT * FROM verified_buyers WHERE address = $1 AND is_active = true`,
       [address]
     );
-    res.json({ reviews: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch reviews', detail: error.message });
+
+    res.json({
+      isVerifiedBuyer: result.rows.length > 0,
+      verifiedAt: result.rows[0]?.verified_at || null,
+    });
+  } catch (error) {
+    console.error('Error checking buyer verification:', error);
+    res.status(500).json({ error: 'Failed to check verification' });
   }
 });
 
-// ==================== Admin Endpoints ====================
-// All protected by x-admin-key header matching ADMIN_KEY env var
+// ── Get all verified sellers ──────────────────────────────────────────────────
+app.get('/api/verified-sellers', async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
 
-function disputeEmailHtml(productTitle: string, reason: string, buyerAddress: string): string {
-  const siteUrl = process.env.FRONTEND_URL || 'https://digi-chainstore.vercel.app';
-  return `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
-  <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:28px;text-align:center;">
-    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">⚖️ Dispute Raised</h1>
-  </div>
-  <div style="padding:24px;">
-    <p style="color:#374151;font-size:14px;">A buyer raised a dispute. Please respond within 48 hours.</p>
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:4px 0;font-size:13px;color:#6b7280;">Product: <strong>${productTitle}</strong></p>
-      <p style="margin:4px 0;font-size:13px;color:#dc2626;font-weight:600;">Reason: ${reason.replace(/_/g,' ')}</p>
-      <p style="margin:4px 0;font-size:12px;color:#9ca3af;font-family:monospace;">Buyer: ${buyerAddress.slice(0,16)}...${buyerAddress.slice(-6)}</p>
-    </div>
-    <a href="${siteUrl}/analytics" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View Dashboard</a>
-  </div></div>`;
+    const result = await pool.query(
+      `SELECT s.*, COUNT(DISTINCT p.id) as product_count
+       FROM sellers s
+       LEFT JOIN products p ON s.address = p.seller AND p.is_available = true
+       WHERE s.is_verified = true AND s.is_banned = false
+       GROUP BY s.address
+       ORDER BY s.total_sales DESC
+       LIMIT $1`,
+      [Number(limit)]
+    );
+
+    res.json({ sellers: result.rows });
+  } catch (error) {
+    console.error('Error fetching verified sellers:', error);
+    res.status(500).json({ error: 'Failed to fetch verified sellers' });
+  }
+});
+
+// ── Indexer hook: sync verification events from chain ────────────────────────
+app.post('/api/indexer/seller-verified', async (req, res) => {
+  try {
+    const { seller, verified_by, timestamp } = req.body;
+
+    await pool.query(
+      `UPDATE sellers SET is_verified = true, verified_at = $1, verified_by = $2, updated_at = NOW()
+       WHERE address = $3`,
+      [timestamp, verified_by, seller]
+    );
+
+    await pool.query(
+      `UPDATE products SET seller_is_verified = true WHERE seller = $1`,
+      [seller]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to sync seller verification' });
+  }
+});
+
+app.post('/api/indexer/buyer-verified', async (req, res) => {
+  try {
+    const { buyer, verified_by, timestamp } = req.body;
+
+    await pool.query(
+      `INSERT INTO verified_buyers (address, verified_at, verified_by, is_active)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (address) DO UPDATE SET
+         verified_at = $2, verified_by = $3, is_active = true`,
+      [buyer, timestamp, verified_by]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to sync buyer verification' });
+  }
+});
+
+// ── Utility: generate a readable license key from on-chain data ──
+function buildLicenseKey(licenseObjectId: string): string {
+  // Takes the on-chain object ID and formats it as a readable key
+  // DIGI-XXXX-XXXX-XXXX-XXXX
+  const hash = createHash('sha256').update(licenseObjectId).digest('hex');
+  const parts = hash.match(/.{1,4}/g)!.slice(0, 6).join('-').toUpperCase();
+  return `DIGI-${parts}`;
 }
 
-
-const requireAdmin = (req: any, res: any, next: any) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-};
-
-// GET /api/admin/overview — platform-wide stats
-app.get('/api/admin/overview', requireAdmin, async (req: any, res: any) => {
+// ── GET /api/licenses/buyer/:address ────────────────────────
+// All licenses owned by a buyer (with product info)
+app.get('/api/licenses/buyer/:address', async (req, res) => {
   try {
-    const [stats, revenueRow, recentRow, topSellers] = await Promise.all([
-      pool.query(`
-        SELECT
-          (SELECT COUNT(*) FROM products)                          AS total_products,
-          (SELECT COUNT(*) FROM products WHERE is_available=true)  AS active_products,
-          (SELECT COUNT(*) FROM sellers)                           AS total_sellers,
-          (SELECT COUNT(*) FROM purchases)                         AS total_purchases,
-          (SELECT COALESCE(SUM(price),0) FROM purchases)           AS total_volume,
-          (SELECT COUNT(*) FROM disputes)                          AS total_disputes,
-          (SELECT COUNT(*) FROM disputes WHERE status='open')      AS open_disputes,
-          (SELECT COUNT(*) FROM support_messages)                  AS total_messages,
-          (SELECT COUNT(*) FROM support_messages WHERE status='open') AS open_messages,
-          (SELECT COUNT(*) FROM reviews)                           AS total_reviews
-      `),
-      pool.query(`
-        SELECT
-          TO_CHAR(TO_TIMESTAMP(created_at/1000),'YYYY-MM') AS month,
-          COUNT(*)                                           AS sales,
-          COALESCE(SUM(price),0)                            AS revenue
-        FROM purchases
-        GROUP BY month ORDER BY month DESC LIMIT 6
-      `),
-      pool.query(`
-        SELECT p.id, p.title, p.price, pu.buyer, pu.created_at
-        FROM purchases pu
-        JOIN products p ON p.id = pu.product_id
-        ORDER BY pu.created_at DESC LIMIT 10
-      `),
-      pool.query(`
-        SELECT s.address, s.display_name, s.total_sales, s.total_revenue, s.is_banned,
-               COUNT(p.id) AS product_count
-        FROM sellers s
-        LEFT JOIN products p ON p.seller = s.address
-        GROUP BY s.address ORDER BY s.total_revenue DESC LIMIT 10
-      `),
-    ]);
+    const { address } = req.params;
 
-    res.json({
-      stats:       stats.rows[0],
-      revenue:     revenueRow.rows,
-      recentSales: recentRow.rows,
-      topSellers:  topSellers.rows,
-    });
-  } catch (error: any) {
-    console.error('Admin overview error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch admin overview', detail: error.message });
-  }
-});
-
-// GET /api/admin/sellers — list all sellers with details
-app.get('/api/admin/sellers', requireAdmin, async (req: any, res: any) => {
-  try {
-    const { page = 1, limit = 20, search = '' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
-
-    const whereClause = search
-      ? `WHERE s.address ILIKE $3 OR s.display_name ILIKE $3`
-      : '';
-    const params: any[] = [Number(limit), offset];
-    if (search) params.push(`%${search}%`);
-
-    const [sellers, countRow] = await Promise.all([
-      pool.query(
-        `SELECT s.*, COUNT(p.id) AS product_count
-         FROM sellers s
-         LEFT JOIN products p ON p.seller = s.address
-         ${whereClause}
-         GROUP BY s.address
-         ORDER BY s.created_at DESC
-         LIMIT $1 OFFSET $2`,
-        params
-      ),
-      pool.query(
-        `SELECT COUNT(DISTINCT s.address) FROM sellers s ${whereClause}`,
-        search ? [`%${search}%`] : []
-      ),
-    ]);
-
-    res.json({
-      sellers: sellers.rows,
-      total:   Number(countRow.rows[0].count),
-      pages:   Math.ceil(Number(countRow.rows[0].count) / Number(limit)),
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch sellers', detail: error.message });
-  }
-});
-
-// PATCH /api/admin/sellers/:address — ban/unban seller
-app.patch('/api/admin/sellers/:address', requireAdmin, async (req: any, res: any) => {
-  try {
-    const { is_banned } = req.body;
-    await pool.query(
-      `UPDATE sellers SET is_banned = $1 WHERE address = $2`,
-      [is_banned, req.params.address]
+    const result = await pool.query(
+      `SELECT
+         l.*,
+         p.title       AS product_title,
+         p.image_url   AS product_image,
+         p.category    AS product_category,
+         p.file_cid    AS product_file_cid,
+         COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_devices
+       FROM licenses l
+       LEFT JOIN products p  ON l.product_id = p.id
+       LEFT JOIN license_activations la ON l.license_id = la.license_id
+       WHERE l.buyer_address = $1
+       GROUP BY l.id, p.title, p.image_url, p.category, p.file_cid
+       ORDER BY l.issue_timestamp DESC`,
+      [address]
     );
-    // Also hide their products if banned
-    if (is_banned) {
-      await pool.query(
-        `UPDATE products SET is_available = false WHERE seller = $1`,
-        [req.params.address]
-      );
+
+    res.json({ licenses: result.rows });
+  } catch (error) {
+    console.error('Error fetching buyer licenses:', error);
+    res.status(500).json({ error: 'Failed to fetch licenses' });
+  }
+});
+
+// ── GET /api/licenses/:licenseId ────────────────────────────
+// Single license by its on-chain object ID
+app.get('/api/licenses/:licenseId', async (req, res) => {
+  try {
+    const { licenseId } = req.params;
+
+    const result = await pool.query(
+      `SELECT
+         l.*,
+         p.title     AS product_title,
+         p.image_url AS product_image,
+         p.category  AS product_category,
+         p.license_duration_days
+       FROM licenses l
+       LEFT JOIN products p ON l.product_id = p.id
+       WHERE l.license_id = $1`,
+      [licenseId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'License not found' });
     }
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to update seller', detail: error.message });
+
+    // Also fetch active devices
+    const devices = await pool.query(
+      `SELECT device_id, activated_at FROM license_activations
+       WHERE license_id = $1 AND is_active = true
+       ORDER BY activated_at ASC`,
+      [licenseId]
+    );
+
+    res.json({ license: result.rows[0], devices: devices.rows });
+  } catch (error) {
+    console.error('Error fetching license:', error);
+    res.status(500).json({ error: 'Failed to fetch license' });
   }
 });
 
-// GET /api/admin/products — list all products with details
-app.get('/api/admin/products', requireAdmin, async (req: any, res: any) => {
+// ── GET /api/licenses/product/:productId/buyer/:address ─────
+// Check if a specific buyer has a license for a specific product
+app.get('/api/licenses/product/:productId/buyer/:address', async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = '' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
-    const params: any[] = [Number(limit), offset];
-    const whereClause = search ? `WHERE p.title ILIKE $3 OR p.seller ILIKE $3` : '';
-    if (search) params.push(`%${search}%`);
+    const { productId, address } = req.params;
 
-    const [products, countRow] = await Promise.all([
-      pool.query(
-        `SELECT p.*, s.display_name AS seller_name
-         FROM products p
-         LEFT JOIN sellers s ON s.address = p.seller
-         ${whereClause}
-         ORDER BY p.created_at DESC LIMIT $1 OFFSET $2`,
-        params
-      ),
-      pool.query(
-        `SELECT COUNT(*) FROM products p ${whereClause}`,
-        search ? [`%${search}%`] : []
-      ),
-    ]);
+    const result = await pool.query(
+      `SELECT l.*,
+         COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_devices
+       FROM licenses l
+       LEFT JOIN license_activations la ON l.license_id = la.license_id
+       WHERE l.product_id = $1 AND l.buyer_address = $2 AND l.status = 'active'
+       GROUP BY l.id
+       ORDER BY l.issue_timestamp DESC
+       LIMIT 1`,
+      [productId, address]
+    );
 
     res.json({
-      products: products.rows,
-      total:    Number(countRow.rows[0].count),
-      pages:    Math.ceil(Number(countRow.rows[0].count) / Number(limit)),
+      hasLicense: result.rows.length > 0,
+      license: result.rows[0] || null,
     });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch products', detail: error.message });
+  } catch (error) {
+    console.error('Error checking license:', error);
+    res.status(500).json({ error: 'Failed to check license' });
   }
 });
 
-// PATCH /api/admin/products/:id — hide/show product
-app.patch('/api/admin/products/:id', requireAdmin, async (req: any, res: any) => {
+// ── POST /api/licenses/verify ───────────────────────────────
+// Public endpoint — third-party software calls this to verify a key
+// Body: { licenseKey, productId? }
+app.post('/api/licenses/verify', async (req, res) => {
   try {
-    const { is_available } = req.body;
-    await pool.query(
-      `UPDATE products SET is_available = $1, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT * 1000 WHERE id = $2`,
-      [is_available, req.params.id]
-    );
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to update product', detail: error.message });
+    const { licenseKey, productId } = req.body;
+
+    if (!licenseKey) {
+      return res.status(400).json({ error: 'licenseKey is required' });
+    }
+
+    // Search by license_id (the on-chain object ID we store)
+    // The license key displayed to users is DIGI-XXXXX which we regenerate
+    const query = productId
+      ? `SELECT l.*, p.title AS product_title
+         FROM licenses l
+         LEFT JOIN products p ON l.product_id = p.id
+         WHERE l.license_id = $1 AND l.product_id = $2`
+      : `SELECT l.*, p.title AS product_title
+         FROM licenses l
+         LEFT JOIN products p ON l.product_id = p.id
+         WHERE l.license_id = $1`;
+
+    const params = productId ? [licenseKey, productId] : [licenseKey];
+    const result = await pool.query(query, params);
+
+    if (result.rows.length === 0) {
+      return res.json({ valid: false, message: 'License not found' });
+    }
+
+    const license  = result.rows[0];
+    const now      = Date.now();
+    const isExpired = license.expiry_timestamp > 0 && now > Number(license.expiry_timestamp);
+    const isActive  = license.status === 'active' && !isExpired;
+
+    res.json({
+      valid:          isActive,
+      status:         license.status,
+      expired:        isExpired,
+      product_title:  license.product_title,
+      buyer_address:  license.buyer_address,
+      license_type:   license.license_type,
+      max_activations: license.max_activations,
+      current_activations: license.current_activations,
+      expiry_timestamp: license.expiry_timestamp,
+      renewal_price:  license.renewal_price,
+      message: license.status === 'revoked'
+        ? 'License has been revoked'
+        : isExpired
+        ? 'License has expired — renewal required'
+        : 'License is valid ✅',
+    });
+  } catch (error) {
+    console.error('Error verifying license:', error);
+    res.status(500).json({ error: 'Failed to verify license' });
   }
 });
 
-// GET /api/admin/disputes — all disputes
-app.get('/api/admin/disputes', requireAdmin, async (req: any, res: any) => {
+// ── GET /api/licenses/seller/:address ───────────────────────
+// Seller analytics — all licenses issued for their products
+app.get('/api/licenses/seller/:address', async (req, res) => {
   try {
-    const { status = '' } = req.query;
-    const where = status ? `WHERE d.status = $1` : '';
-    const result = await pool.query(
-      `SELECT d.*, p.title AS product_title, p.price AS product_price
-       FROM disputes d
-       LEFT JOIN purchases pu ON pu.tx_digest = d.tx_digest
-       LEFT JOIN products p  ON p.id = pu.product_id
-       ${where}
-       ORDER BY d.created_at DESC LIMIT 100`,
-      status ? [status] : []
-    );
-    res.json({ disputes: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch disputes', detail: error.message });
-  }
-});
-
-// PATCH /api/admin/disputes/:id — resolve dispute
-app.patch('/api/admin/disputes/:id', requireAdmin, async (req: any, res: any) => {
-  try {
-    const { status, resolution } = req.body;
-    await pool.query(
-      `UPDATE disputes SET status=$1, resolution=$2, updated_at=$3 WHERE id=$4`,
-      [status, resolution || null, Date.now(), req.params.id]
-    );
-
-    // Email buyer about resolution
-    try {
-      const disputeRow = await pool.query('SELECT buyer_address FROM disputes WHERE id = $1', [req.params.id]);
-      if (disputeRow.rows[0]) {
-        const buyerAddr = disputeRow.rows[0].buyer_address;
-        const buyerRow  = await pool.query('SELECT email FROM sellers WHERE address = $1', [buyerAddr]);
-        if (buyerRow.rows[0]?.email) {
-          const won = status === 'resolved';
-          const RESEND_KEY = process.env.RESEND_API_KEY;
-          const FROM = process.env.FROM_EMAIL || 'noreply@digichainstore.com';
-          const siteUrl = process.env.FRONTEND_URL || 'https://digi-chainstore.vercel.app';
-          const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb;">
-  <div style="background:${won ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#6b7280,#4b5563)'};padding:28px;text-align:center;">
-    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">${won ? '✅ Dispute Resolved' : '❌ Dispute Closed'}</h1>
-  </div>
-  <div style="padding:24px;">
-    <div style="background:#f9fafb;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:0;font-size:13px;color:#374151;"><strong>Resolution:</strong> ${resolution || 'No notes provided.'}</p>
-    </div>
-    <a href="${siteUrl}/profile" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">View My Purchases</a>
-  </div></div>`;
-          if (RESEND_KEY) {
-            await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: { 'Authorization': 'Bearer ' + RESEND_KEY, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ from: FROM, to: buyerRow.rows[0].email, subject: won ? '✅ Your dispute has been resolved' : '❌ Your dispute has been closed', html }),
-            });
-          }
-        }
-      }
-    } catch (emailErr: any) { console.error('Resolve email error:', emailErr?.message); }
-
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to update dispute', detail: error.message });
-  }
-});
-
-// GET /api/admin/messages — support messages
-app.get('/api/admin/messages', requireAdmin, async (req: any, res: any) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM support_messages ORDER BY created_at DESC LIMIT 100`
-    );
-    res.json({ messages: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch messages', detail: error.message });
-  }
-});
-
-// PATCH /api/admin/messages/:id
-app.patch('/api/admin/messages/:id', requireAdmin, async (req: any, res: any) => {
-  try {
-    const { status } = req.body;
-    await pool.query(
-      `UPDATE support_messages SET status=$1 WHERE id=$2`,
-      [status, req.params.id]
-    );
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to update message', detail: error.message });
-  }
-});
-
-// ==================== Support Endpoints ====================
-
-// POST /api/support/contact — stores message and emails admin
-app.post('/api/support/contact', async (req, res) => {
-  try {
-    const { name, email, subject, message, wallet } = req.body;
-    if (!email || !message) return res.status(400).json({ error: 'Email and message required' });
-
-    await pool.query(
-      `INSERT INTO support_messages (name, email, subject, message, wallet_address, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [name || 'Anonymous', email, subject || 'Support Request', message,
-       wallet || null, Date.now()]
-    );
-
-    console.log(`📧 Support message from ${email}: ${subject}`);
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('Support contact error:', error.message);
-    res.status(500).json({ error: 'Failed to send message', detail: error.message });
-  }
-});
-
-// POST /api/support/dispute
-app.post('/api/support/dispute', async (req, res) => {
-  try {
-    const { tx_digest, reason, description, wallet } = req.body;
-    if (!tx_digest || !reason || !description || !wallet)
-      return res.status(400).json({ error: 'All fields required' });
-
-    // Verify purchase exists
-    const purchase = await pool.query(
-      'SELECT * FROM purchases WHERE tx_digest = $1 AND buyer = $2',
-      [tx_digest, wallet]
-    );
-
-    await pool.query(
-      `INSERT INTO disputes (tx_digest, buyer_address, reason, description, status, created_at)
-       VALUES ($1,$2,$3,$4,'open',$5)
-       ON CONFLICT (tx_digest) DO UPDATE SET
-         reason      = EXCLUDED.reason,
-         description = EXCLUDED.description,
-         updated_at  = $5`,
-      [tx_digest, wallet, reason, description, Date.now()]
-    );
-
-    console.log(`⚖️  Dispute filed by ${wallet} for tx ${tx_digest}`);
-
-    // Notify seller about the dispute
-    try {
-      const purchaseRow = await pool.query(
-        'SELECT product_id, seller FROM purchases WHERE tx_digest = $1',
-        [tx_digest]
-      );
-      if (purchaseRow.rows[0]) {
-        const { product_id, seller: sellerAddr } = purchaseRow.rows[0];
-        const [sellerRow, productRow] = await Promise.all([
-          pool.query('SELECT email FROM sellers WHERE address = $1', [sellerAddr]),
-          pool.query('SELECT title FROM products WHERE id = $1', [product_id]),
-        ]);
-        if (sellerRow.rows[0]?.email && productRow.rows[0]) {
-          // Inline template to avoid import issues in server.ts
-          const emailHtml = disputeEmailHtml(productRow.rows[0].title, reason, wallet);
-          const RESEND_KEY = process.env.RESEND_API_KEY;
-          const FROM = process.env.FROM_EMAIL || 'noreply@digichainstore.com';
-          if (RESEND_KEY) {
-            await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: { 'Authorization': 'Bearer ' + RESEND_KEY, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ from: FROM, to: sellerRow.rows[0].email, subject: '⚖️ A dispute was raised on your product', html: emailHtml }),
-            });
-          }
-        }
-      }
-    } catch (emailErr: any) { console.error('Dispute email error:', emailErr?.message); }
-
-    res.json({ success: true, purchase_found: purchase.rows.length > 0 });
-  } catch (error: any) {
-    console.error('Dispute error:', error.message);
-    res.status(500).json({ error: 'Failed to submit dispute', detail: error.message });
-  }
-});
-
-// GET /api/support/disputes — admin only (basic key check)
-app.get('/api/support/disputes', async (req, res) => {
-  try {
-    const adminKey = req.headers['x-admin-key'];
-    if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+    const { address } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
 
     const result = await pool.query(
-      'SELECT * FROM disputes ORDER BY created_at DESC LIMIT 100'
+      `SELECT
+         l.*,
+         p.title      AS product_title,
+         p.image_url  AS product_image,
+         COUNT(la.id) FILTER (WHERE la.is_active = true) AS active_devices
+       FROM licenses l
+       LEFT JOIN products p ON l.product_id = p.id
+       LEFT JOIN license_activations la ON l.license_id = la.license_id
+       WHERE l.seller_address = $1
+       GROUP BY l.id, p.title, p.image_url
+       ORDER BY l.issue_timestamp DESC
+       LIMIT $2 OFFSET $3`,
+      [address, Number(limit), offset]
     );
-    res.json({ disputes: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch disputes', detail: error.message });
+
+    // Summary stats
+    const stats = await pool.query(
+      `SELECT
+         COUNT(*)                                         AS total_licenses,
+         COUNT(*) FILTER (WHERE status = 'active')       AS active_licenses,
+         COUNT(*) FILTER (WHERE status = 'revoked')      AS revoked_licenses,
+         COUNT(*) FILTER (WHERE expiry_timestamp > 0 AND expiry_timestamp < $2) AS expired_licenses,
+         SUM(renewal_count)                              AS total_renewals
+       FROM licenses
+       WHERE seller_address = $1`,
+      [address, Date.now()]
+    );
+
+    res.json({ licenses: result.rows, stats: stats.rows[0] });
+  } catch (error) {
+    console.error('Error fetching seller licenses:', error);
+    res.status(500).json({ error: 'Failed to fetch seller licenses' });
   }
 });
 
-// PATCH /api/support/disputes/:id — update dispute status (admin)
-app.patch('/api/support/disputes/:id', async (req, res) => {
+// ── POST /api/admin/revoke-license ──────────────────────────
+// Admin revokes a license (mirrors the on-chain revoke_license call)
+app.post('/api/admin/revoke-license', async (req, res) => {
   try {
-    const adminKey = req.headers['x-admin-key'];
-    if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+    const { licenseId, adminAddress, reason } = req.body;
 
-    const { status, resolution } = req.body;
+    if (!licenseId || !adminAddress) {
+      return res.status(400).json({ error: 'licenseId and adminAddress required' });
+    }
+
     await pool.query(
-      `UPDATE disputes SET status = $1, resolution = $2, updated_at = $3 WHERE id = $4`,
-      [status, resolution || null, Date.now(), req.params.id]
+      `UPDATE licenses
+       SET status = 'revoked', updated_at = NOW()
+       WHERE license_id = $1`,
+      [licenseId]
     );
+
+    // Deactivate all devices for this license
+    await pool.query(
+      `UPDATE license_activations
+       SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2`,
+      [Date.now(), licenseId]
+    );
+
+    console.log(`🚫 License revoked: ${licenseId} by admin ${adminAddress}. Reason: ${reason}`);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to update dispute', detail: error.message });
+  } catch (error) {
+    console.error('Error revoking license:', error);
+    res.status(500).json({ error: 'Failed to revoke license' });
   }
 });
+
+// ── Indexer sync endpoints ───────────────────────────────────
+// Called by the indexer when it processes chain events
+
+app.post('/api/indexer/license-issued', async (req, res) => {
+  try {
+    const { licenseId, productId, buyer, seller, licenseType,
+            maxActivations, expiryTimestamp, renewalPrice, timestamp, txDigest } = req.body;
+
+    await pool.query(
+      `INSERT INTO licenses (
+         license_id, product_id, buyer_address, seller_address,
+         tx_digest, license_type, max_activations, current_activations,
+         expiry_timestamp, renewal_price, status, renewal_count, issue_timestamp
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,'active',0,$10)
+       ON CONFLICT (license_id) DO NOTHING`,
+      [licenseId, productId, buyer, seller, txDigest,
+       licenseType, maxActivations, expiryTimestamp, renewalPrice, timestamp]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseIssued:', error);
+    res.status(500).json({ error: 'Failed to sync license' });
+  }
+});
+
+app.post('/api/indexer/license-activated', async (req, res) => {
+  try {
+    const { licenseId, deviceId, activationsUsed, timestamp } = req.body;
+
+    // Upsert the activation row
+    await pool.query(
+      `INSERT INTO license_activations (license_id, device_id, activated_at, is_active)
+       VALUES ($1,$2,$3,true)
+       ON CONFLICT (license_id, device_id) DO UPDATE SET
+         is_active = true, activated_at = $3, deactivated_at = NULL`,
+      [licenseId, deviceId, timestamp]
+    );
+
+    // Keep current_activations in sync
+    await pool.query(
+      `UPDATE licenses SET current_activations = $1, updated_at = NOW()
+       WHERE license_id = $2`,
+      [activationsUsed, licenseId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseActivated:', error);
+    res.status(500).json({ error: 'Failed to sync activation' });
+  }
+});
+
+app.post('/api/indexer/license-deactivated', async (req, res) => {
+  try {
+    const { licenseId, deviceId, activationsUsed, timestamp } = req.body;
+
+    await pool.query(
+      `UPDATE license_activations
+       SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2 AND device_id = $3`,
+      [timestamp, licenseId, deviceId]
+    );
+
+    await pool.query(
+      `UPDATE licenses SET current_activations = $1, updated_at = NOW()
+       WHERE license_id = $2`,
+      [activationsUsed, licenseId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseDeactivated:', error);
+    res.status(500).json({ error: 'Failed to sync deactivation' });
+  }
+});
+
+app.post('/api/indexer/license-renewed', async (req, res) => {
+  try {
+    const { licenseId, owner, newExpiry, renewalCount,
+            amountPaid, txDigest, oldExpiry, timestamp } = req.body;
+
+    await pool.query(
+      `UPDATE licenses
+       SET expiry_timestamp = $1, status = 'active',
+           renewal_count = $2, updated_at = NOW()
+       WHERE license_id = $3`,
+      [newExpiry, renewalCount, licenseId]
+    );
+
+    // Record in renewal audit table
+    await pool.query(
+      `INSERT INTO license_renewals (
+         license_id, buyer_address, amount_paid, tx_digest,
+         old_expiry, new_expiry, renewal_number, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [licenseId, owner, amountPaid, txDigest, oldExpiry, newExpiry, renewalCount, timestamp]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseRenewed:', error);
+    res.status(500).json({ error: 'Failed to sync renewal' });
+  }
+});
+
+app.post('/api/indexer/license-revoked', async (req, res) => {
+  try {
+    const { licenseId } = req.body;
+
+    await pool.query(
+      `UPDATE licenses SET status = 'revoked', updated_at = NOW()
+       WHERE license_id = $1`,
+      [licenseId]
+    );
+
+    await pool.query(
+      `UPDATE license_activations SET is_active = false, deactivated_at = $1
+       WHERE license_id = $2`,
+      [Date.now(), licenseId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing LicenseRevoked:', error);
+    res.status(500).json({ error: 'Failed to sync revocation' });
+  }
+});
+
+
+// ==================== Start Server ====================
 
 // Bind to 0.0.0.0 so Railway (and any cloud host) can route traffic to the container
 // localhost/127.0.0.1 only accepts connections from inside the container — Railway needs 0.0.0.0
