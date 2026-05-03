@@ -1102,7 +1102,7 @@ app.get('/api/download/file/:token', async (req, res) => {
     const { file_cid, file_name } = entry;
 
     // Proxy the file through our server — client never sees the Pinata/IPFS URL
-    // Node 18+ native fetch — no node-fetch dependency needed
+    // Node 18+ native fetch — buffer the response and send it
     const fileRes = await fetch(`https://gateway.pinata.cloud/ipfs/${file_cid}`);
 
     if (!fileRes.ok) {
@@ -1110,13 +1110,18 @@ app.get('/api/download/file/:token', async (req, res) => {
     }
 
     const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = fileRes.headers.get('content-length');
+
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${file_name || 'download'}"`);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
 
-    // Pipe file directly to response — never stored on our server
-    fileRes.body.pipe(res);
+    // Read as ArrayBuffer → Buffer → send (Web API fetch has no .pipe())
+    const arrayBuffer = await fileRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    res.end(buffer);
   } catch (error: any) {
     console.error('Download file error:', error.message);
     res.status(500).json({ error: 'Download failed', detail: error.message });
